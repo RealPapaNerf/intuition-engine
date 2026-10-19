@@ -1,5 +1,9 @@
-// The Lazy Colony: an ant bridge, a frog, and member-shedding topology
-// optimization you can watch. Dev demo for the engine, not the game yet.
+// Will It Break: the frog, the ant bridge, and the predict gate.
+//
+// The one non-negotiable invariant, enforced: nothing runs until the kid
+// commits to a prediction. The frog walks on only after "holds" or
+// "breaks" is called; physics decides; the calibration score accumulates.
+// After a bridge that holds, the lazy-colony shed is available.
 
 import {
   makeModel,
@@ -16,12 +20,13 @@ import {
 } from '../engine/index.js';
 
 const FROG_SIZES = [0.02, 0.05, 0.1, 0.2]; // kg
+const FROG_NAMES = ['Peep (20 g)', 'Hopper (50 g)', 'Chonk (100 g)', 'Big Earl (200 g)'];
 const RIVER_Y = -0.4;
 const DECK_MIN_Y = -0.36;
+const RAMP_FRAMES = 90; // the frog walks on over ~1.5 s: a gentle load
+const WATCH_FRAMES = 150;
 
-// Deterministic builder, used for both the live scene and the shedder's
-// planning copy, so member indices line up between the two.
-function buildBridge(frogMass) {
+function buildBridge() {
   const model = makeModel();
   const left = addNode(model, { x: 0, y: 0, fixed: true });
   const right = addNode(model, { x: 1, y: 0, fixed: true });
@@ -45,9 +50,8 @@ function buildBridge(frogMass) {
     addMember(model, deck[i + 1], lower[i], ANT);
   }
 
-  const mid = Math.floor(deck.length / 2);
-  deck[mid].mass += frogMass;
-  return { model, deck, frogNode: deck[mid] };
+  const frogNode = deck[Math.floor(deck.length / 2)];
+  return { model, deck, frogNode, baseMass: frogNode.mass };
 }
 
 const canvas = document.getElementById('canvas');
@@ -60,69 +64,134 @@ const ty = (y) => (0.32 - y) * S;
 
 let frogIndex = 1;
 let scene;
+let phase; // 'predict' | 'testing' | 'result'
+let prediction = null; // 'holds' | 'breaks'
+let verdict = null;
+let rampFrame = 0;
+let watchFrame = 0;
+let snappedAt = null; // x of the first snapped member
 let freed = 0;
-let frogFell = false;
 let shedQueue = [];
 let shedTimer = 0;
 
-function rebuild() {
-  scene = buildBridge(FROG_SIZES[frogIndex]);
-  // Start at static equilibrium: the drama should come from the physics
-  // of the load, not from the numerical transient of dropping the whole
-  // bridge into place. A genuinely overloaded bridge still snaps on the
-  // first frame — honestly.
+// Calibration tally. localStorage is a per-viewer convenience: wrapped,
+// and the game is fine without it.
+let stats = { right: 0, total: 0, streak: 0 };
+try {
+  const s = JSON.parse(localStorage.getItem('willitbreak-stats'));
+  if (s && Number.isInteger(s.right)) stats = s;
+} catch {
+  /* fresh tally */
+}
+function saveStats() {
+  try {
+    localStorage.setItem('willitbreak-stats', JSON.stringify(stats));
+  } catch {
+    /* fine */
+  }
+}
+
+function setPhase(next) {
+  phase = next;
+  $('smaller').disabled = phase !== 'predict';
+  $('bigger').disabled = phase !== 'predict';
+  $('holds').disabled = phase !== 'predict';
+  $('breaks').disabled = phase !== 'predict';
+  $('shed').disabled = !(phase === 'result' && verdict === 'holds' && shedQueue.length === 0);
+  $('reset').disabled = phase === 'testing';
+}
+
+function newRound() {
+  scene = buildBridge();
   settle(scene.model, { maxSteps: 20000 });
+  prediction = null;
+  verdict = null;
+  rampFrame = 0;
+  watchFrame = 0;
+  snappedAt = null;
   freed = 0;
-  frogFell = false;
   shedQueue = [];
-  $('msg').textContent = '';
-  $('frog').textContent = `${FROG_SIZES[frogIndex] * 1000} g`;
+  $('frog').textContent = FROG_NAMES[frogIndex];
+  $('msg').textContent = `${FROG_NAMES[frogIndex]} wants to cross. Will the bridge hold? Say it before you see it.`;
+  setPhase('predict');
+}
+
+function predict(call) {
+  prediction = call;
+  $('msg').textContent =
+    call === 'holds' ? 'You say it HOLDS. Here comes the frog…' : 'You say it BREAKS. Here comes the frog…';
+  setPhase('testing');
+}
+
+function finishRound(actual) {
+  verdict = actual;
+  stats.total++;
+  const correct = prediction === actual;
+  if (correct) {
+    stats.right++;
+    stats.streak++;
+  } else {
+    stats.streak = 0;
+  }
+  saveStats();
+
+  let why;
+  if (actual === 'breaks') {
+    const where = snappedAt == null ? '' : snappedAt < 0.25 || snappedAt > 0.75 ? ' It snapped near the bank — that is where the pull is biggest.' : ' It snapped near the middle, right under the frog.';
+    why = `💥 It broke.${where}`;
+  } else {
+    let maxU = 0;
+    for (const m of activeMembers(scene.model)) maxU = Math.max(maxU, utilization(m));
+    why = `💪 It held. The hardest ant worked at ${Math.round(maxU * 100)}% of its grip.`;
+  }
+  $('msg').textContent = `${correct ? '✅ Called it!' : '❌ Not this time.'} ${why}${actual === 'holds' ? ' Now — which ants were even needed?' : ''}`;
+  setPhase('result');
 }
 
 function runShed() {
-  // Plan on a fresh copy (same geometry, same frog), replay on the live
-  // scene one ant at a time so the kid can watch each decision.
-  const plan = buildBridge(FROG_SIZES[frogIndex]);
+  const plan = buildBridge();
+  plan.frogNode.mass = plan.baseMass + FROG_SIZES[frogIndex];
   const goal = makeGoal({ watchNodes: plan.deck, minY: DECK_MIN_Y });
-  const settleOpts = { maxSteps: 30000 };
-  const result = shed(plan.model, { goal, settleOpts });
-
-  if (!result.feasible) {
-    $('msg').textContent =
-      "⚠️ The bridge can't even hold this frog — try a smaller frog.";
-    return;
-  }
-  if (result.removed.length === 0) {
+  const result = shed(plan.model, { goal, settleOpts: { maxSteps: 30000 } });
+  if (!result.feasible || result.removed.length === 0) {
     $('msg').textContent = 'Every ant is needed. No one gets to be lazy.';
     return;
   }
   shedQueue = result.removed.map((m) => plan.model.members.indexOf(m));
   $('msg').textContent = 'Watch: the laziest ants let go, one by one…';
+  $('shed').disabled = true;
 }
 
 function tick() {
-  // Live dynamics, lightly damped so the bridge jiggles and then rests.
-  if (!frogFell) {
-    for (let i = 0; i < 24; i++) {
-      step(scene.model, 0.0008);
-      for (const n of scene.model.nodes) {
-        if (!n.fixed) {
-          n.vx *= 0.999;
-          n.vy *= 0.999;
-        }
+  for (let i = 0; i < 24; i++) {
+    step(scene.model, 0.0008);
+    for (const n of scene.model.nodes) {
+      if (!n.fixed) {
+        n.vx *= 0.999;
+        n.vy *= 0.999;
       }
-    }
-    const snapped = checkBreaks(scene.model);
-    if (snapped.length > 0) {
-      $('msg').textContent = `💥 ${snapped.length} ant(s) snapped!`;
-    }
-    if (scene.frogNode.y < RIVER_Y + 0.03) {
-      frogFell = true;
-      $('msg').textContent = '🐊 The crocodiles say thank you. Rebuild!';
     }
   }
 
-  // Replay the shed plan, one ant every ~20 frames.
+  if (phase === 'testing') {
+    if (rampFrame < RAMP_FRAMES) {
+      rampFrame++;
+      scene.frogNode.mass = scene.baseMass + (FROG_SIZES[frogIndex] * rampFrame) / RAMP_FRAMES;
+    } else {
+      watchFrame++;
+    }
+    const snapped = checkBreaks(scene.model);
+    if (snapped.length > 0 && snappedAt == null) {
+      snappedAt = (snapped[0].a.x + snapped[0].b.x) / 2;
+    }
+    const fell = scene.frogNode.y < RIVER_Y + 0.03;
+    if (snappedAt != null || fell) {
+      if (fell || watchFrame > 30) finishRound('breaks');
+    } else if (watchFrame >= WATCH_FRAMES) {
+      finishRound('holds');
+    }
+  }
+
   if (shedQueue.length > 0 && ++shedTimer >= 20) {
     shedTimer = 0;
     const idx = shedQueue.shift();
@@ -133,8 +202,7 @@ function tick() {
       freed++;
     }
     if (shedQueue.length === 0) {
-      $('msg').textContent =
-        `Done: ${freed} ants back in your jar, and the bridge still holds.`;
+      $('msg').textContent = `Done: ${freed} ants back in your jar, and the bridge still holds the frog.`;
     }
   }
 
@@ -146,7 +214,6 @@ function draw() {
   const { model, frogNode } = scene;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // River and banks.
   ctx.fillStyle = '#7fb6d9';
   ctx.fillRect(0, ty(RIVER_Y), canvas.width, canvas.height - ty(RIVER_Y));
   ctx.fillStyle = '#8a6b43';
@@ -156,7 +223,6 @@ function draw() {
   ctx.fillText('🐊', tx(0.35), ty(RIVER_Y) + 34);
   ctx.fillText('🐊', tx(0.62), ty(RIVER_Y) + 44);
 
-  // Members: red by how hard the ant works, gray when slack.
   let maxU = 0;
   for (const m of activeMembers(model)) {
     const u = Math.min(utilization(m), 1);
@@ -164,36 +230,47 @@ function draw() {
     ctx.strokeStyle =
       m.force <= 1e-6
         ? 'rgba(120,120,120,0.45)'
-        : `rgba(${120 + 135 * u | 0}, ${70 - 40 * u | 0}, 40, 0.95)`;
+        : `rgba(${(120 + 135 * u) | 0}, ${(70 - 40 * u) | 0}, 40, 0.95)`;
     ctx.lineWidth = 1.5 + 2.5 * u;
     ctx.beginPath();
     ctx.moveTo(tx(m.a.x), ty(m.a.y));
     ctx.lineTo(tx(m.b.x), ty(m.b.y));
     ctx.stroke();
-    // The ant itself, at mid-span.
     ctx.font = '11px serif';
     ctx.fillText('🐜', tx((m.a.x + m.b.x) / 2) - 5, ty((m.a.y + m.b.y) / 2) + 4);
   }
 
-  // The frog.
-  ctx.font = `${26 + frogIndex * 10}px serif`;
-  ctx.fillText('🐸', tx(frogNode.x) - 14 - frogIndex * 5, ty(frogNode.y) - 4);
+  // The frog: on the bank while you decide, walking on during the test,
+  // riding the deck (or falling with it) after.
+  const size = 26 + frogIndex * 10;
+  ctx.font = `${size}px serif`;
+  if (phase === 'predict') {
+    ctx.fillText('🐸', tx(-0.1), ty(0.02));
+  } else {
+    const t = Math.min(rampFrame / RAMP_FRAMES, 1);
+    const fx = -0.1 + (frogNode.x - -0.1) * t;
+    const fy = t < 1 ? 0.02 + (frogNode.y - 0.02) * t : frogNode.y;
+    ctx.fillText('🐸', tx(fx) - 14 - frogIndex * 5, ty(fy) - 4);
+  }
 
   $('working').textContent = activeMembers(model).length;
   $('freed').textContent = freed;
   $('maxu').textContent = `${Math.round(maxU * 100)}%`;
+  $('calib').textContent = stats.total === 0 ? '—' : `${stats.right}/${stats.total} right · streak ${stats.streak}`;
 }
 
 $('bigger').onclick = () => {
   frogIndex = Math.min(frogIndex + 1, FROG_SIZES.length - 1);
-  rebuild();
+  newRound();
 };
 $('smaller').onclick = () => {
   frogIndex = Math.max(frogIndex - 1, 0);
-  rebuild();
+  newRound();
 };
+$('holds').onclick = () => predict('holds');
+$('breaks').onclick = () => predict('breaks');
 $('shed').onclick = runShed;
-$('reset').onclick = rebuild;
+$('reset').onclick = newRound;
 
-rebuild();
+newRound();
 tick();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>The Lazy Colony</title>
+  <title>Will It Break</title>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -35,23 +35,26 @@
   </style>
 </head>
 <body>
-  <h1>The Lazy Colony 🐜</h1>
+  <h1>Will It Break? 🐸🐜</h1>
   <p class="sub">
-    The ants built a bridge. Which ants are actually working?<br />
-    Shed the lazy ones and the bridge still holds — and you get them back.
+    The ants built a bridge. A frog wants to cross.<br />
+    <strong>Say it before you see it</strong> — then physics decides.
   </p>
   <canvas id="canvas" width="860" height="560"></canvas>
   <div class="row">
     <button id="smaller">Smaller frog</button>
     <button id="bigger">Bigger frog</button>
+    <button id="holds">It HOLDS 💪</button>
+    <button id="breaks">It BREAKS 💥</button>
     <button id="shed">Shed the lazy ants</button>
-    <button id="reset">Rebuild the bridge</button>
+    <button id="reset">New round</button>
   </div>
   <div class="stats">
-    <span>Frog: <b id="frog">50 g</b></span>
+    <span>Frog: <b id="frog">Hopper (50 g)</b></span>
     <span>Ants on the job: <b id="working">0</b></span>
-    <span>Ants back in the jar: <b id="freed">0</b></span>
-    <span>Hardest-working ant: <b id="maxu">0%</b></span>
+    <span>Back in the jar: <b id="freed">0</b></span>
+    <span>Hardest ant: <b id="maxu">0%</b></span>
+    <span>Your calls: <b id="calib">—</b></span>
   </div>
   <div id="msg"></div>
   <script type="module" src="./main.js"></script>
