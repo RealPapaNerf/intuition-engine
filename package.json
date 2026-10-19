@@ -1,0 +1,10 @@
+{
+  "name": "intuition-engine",
+  "version": "0.1.0",
+  "description": "Game framework for growing intuition: honest physics, predict-before-test, scenarios generated per kid.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}

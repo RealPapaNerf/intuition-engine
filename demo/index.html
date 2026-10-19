@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Lazy Colony</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f4efe4;
+      color: #2b2620;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+    }
+    h1 { margin: 4px 0 0; font-size: 1.3rem; }
+    p.sub { margin: 0; color: #6b6354; font-size: 0.9rem; text-align: center; }
+    canvas { background: #dff0f7; border-radius: 10px; max-width: 100%; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    button {
+      font: inherit;
+      padding: 8px 14px;
+      border: 1px solid #b8ab8f;
+      border-radius: 8px;
+      background: #fffdf7;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .stats { display: flex; gap: 18px; font-size: 0.95rem; }
+    .stats b { font-variant-numeric: tabular-nums; }
+    #msg { min-height: 1.2em; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>The Lazy Colony 🐜</h1>
+  <p class="sub">
+    The ants built a bridge. Which ants are actually working?<br />
+    Shed the lazy ones and the bridge still holds — and you get them back.
+  </p>
+  <canvas id="canvas" width="860" height="560"></canvas>
+  <div class="row">
+    <button id="smaller">Smaller frog</button>
+    <button id="bigger">Bigger frog</button>
+    <button id="shed">Shed the lazy ants</button>
+    <button id="reset">Rebuild the bridge</button>
+  </div>
+  <div class="stats">
+    <span>Frog: <b id="frog">50 g</b></span>
+    <span>Ants on the job: <b id="working">0</b></span>
+    <span>Ants back in the jar: <b id="freed">0</b></span>
+    <span>Hardest-working ant: <b id="maxu">0%</b></span>
+  </div>
+  <div id="msg"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
