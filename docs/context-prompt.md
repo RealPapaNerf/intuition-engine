@@ -17,8 +17,9 @@ reopen it, and challenge me hard everywhere else.
 ## What I'm building and why
 
 A game framework that grows **intuition** — the ability to predict an
-answer before computing it, and to smell a wrong answer when a person,
-a feed, or an AI hands one over. The model is people like Kelly
+answer before computing it, to know when you don't know, and to know
+which check to run when a person, a feed, or an AI hands an answer
+over. The model is people like Kelly
 Johnson: look at a thing, feel where the load goes, estimate before
 anyone computes.
 
@@ -88,10 +89,14 @@ philosophy are the product. Four layers:
    required.
 5. **The coach asks; the Consultant errs.** The trustworthy AI coach
    only ever asks questions. A second AI, the Consultant, gives direct
-   answers and is deliberately wrong about 1 time in 5 in curated,
-   findable ways — so verification stays the skill, and kids build a
-   felt taxonomy of how confident wrongness looks. That's the
-   "intuition for AI" training.
+   answers and is deliberately wrong about 1 time in 5 — every error
+   catchable by *reasoning against reality* (a units mismatch, a wrong
+   sign or scaling direction, a limiting case that fails, an order of
+   magnitude, a contradiction with a calibrated prior), never by how
+   the text sounds. The kid's own prediction and their trust call on
+   the Consultant are logged as two separate commitments. That's the
+   "intuition for AI" training: knowing when you don't know, and which
+   check to run.
 6. **Spiral, don't sequence.** Same games for years at three depths —
    feel it (K–2), measure it (3–5), model it (6–8) — so formulas
    arrive as names for old friends ("σ = F/A is the rule you already
@@ -121,9 +126,9 @@ fearlessly). So I promise the meta-loop, hope for broader intuition,
 and measure both. And knowledge isn't skipped, it's resequenced — kids
 end up knowing tension and load paths; it arrives from play instead of
 preceding it. The whole thing is a hypothesis with instruments built
-in: calibration curves, trust-calibration vs the Consultant, planted
-wrong answers (smell tests), invention rate, and transfer probes
-between packs. Stage 0 is my own kids.
+in: calibration curves, trust-calibration vs the Consultant, the
+planted-error catch rate, invention rate, and transfer probes between
+packs. Stage 0 is my own kids.
 
 ## What already exists
 

@@ -1,8 +1,9 @@
 # Intuition Engine
 
 A game framework for growing intuition — the ability to predict an
-answer before computing it, and to smell a wrong answer when a person,
-a textbook, or an AI hands you one.
+answer before computing it, to know when you don't know, and to know
+which check to run when a person, a textbook, or an AI hands you an
+answer.
 
 **Start with `docs/philosophy.md`** — the plan of record for what this
 is actually for: training critical thinkers and calibrated generalists

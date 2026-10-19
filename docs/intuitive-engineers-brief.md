@@ -339,6 +339,38 @@ The errors follow a taxonomy the kid gradually learns to name:
 | Unit slip | Grams where it meant kilograms |
 | Untested assumption | "Wood is wood" — ignores the wet branch |
 
+**Error design rules** (decided 2026-10-19, see
+`decisions/2026-10-19-brainstorm.md`): every curated error must be
+catchable by **reasoning against reality**, never by how the text
+sounds — each one fails at least one of: units mismatch, wrong sign,
+wrong direction of scaling, a limiting case that doesn't vanish (zero
+load should mean zero stress), order of magnitude (~10×), or
+contradiction with a prior the kid calibrated in an earlier level. At
+K–2 depth the same rule is a claim against a feel they've built ("the
+thin stick holds more than the thick one"). The Consultant's prose is
+always fluent and confident — no tonal tells; if a tester can spot the
+error without running a check, the error gets redesigned. And every
+error is catchable, at that depth, by a kid who thinks hard enough —
+none resolvable only by running the build.
+
+**Two separate commitments.** The kid's own prediction and their call
+on the Consultant's answer are logged separately: "I'll just use the
+Consultant's number" is a visible, scorable trust choice, not a
+shortcut around the predict gate. Trust calibration is computed from
+this log.
+
+**Scoring the catch** (goal, never method — how hard they thought is
+not scored):
+
+| Outcome | Score |
+|---|---|
+| Caught before the build | top tier |
+| Build fails → postmortem → caught | next tier, still positive |
+| "I can't judge this one — run it" | a valid catch of the kid's own limit |
+| Used the number uncritically, build fails, never caught | zero, and feeds the disengagement log |
+
+The "show your engineering" bonus still applies on top.
+
 Ladder: K–2 gets a "silly robot" whose mistakes are obvious and
 delightful to catch. 3–5 gets subtle quantitative errors that must be
 verified by test or hand-check. 6–8 gets reasoning chains with one
@@ -353,10 +385,10 @@ nothing changes about the kid's behavior, because the habit is set:
   and the bands narrow over time.
 - **Transfer**: a kid who trained on the frog branch predicts correctly
   on the ant bridge the first time they see it.
-- **Smell test**: show a wrong answer (a bridge the game claims holds
-  10× too much) and the kid flags it. This is the direct anti-
-  pencil-whip measurement — the skill of doubting an authoritative
-  wrong answer.
+- **Planted-error catch rate**: show a wrong answer (a bridge the game
+  claims holds 10× too much) — is it caught, and caught earlier, by
+  running the right check? This is the direct anti-pencil-whip
+  measurement.
 - **Trust calibration**: the kid trusts the Consultant when it's right
   and doubts it when it's wrong, at better than chance and improving.
 - **Invention**: solutions that land in the Museum — honest, goal-met,

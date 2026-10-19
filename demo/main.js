@@ -17,6 +17,9 @@ import {
   activeMembers,
   utilization,
   ANT,
+  makeJournal,
+  record,
+  calibration,
 } from '../engine/index.js';
 
 const FROG_SIZES = [0.02, 0.05, 0.1, 0.2]; // kg
@@ -74,18 +77,24 @@ let freed = 0;
 let shedQueue = [];
 let shedTimer = 0;
 
-// Calibration tally. localStorage is a per-viewer convenience: wrapped,
-// and the game is fine without it.
-let stats = { right: 0, total: 0, streak: 0 };
+// The commitment journal is the real log (engine/journal.js); the
+// kid-visible stat is calibration(), the prestige score. localStorage
+// is a per-viewer convenience: wrapped, and the game is fine without it.
+const journal = makeJournal();
 try {
-  const s = JSON.parse(localStorage.getItem('willitbreak-stats'));
-  if (s && Number.isInteger(s.right)) stats = s;
+  const saved = JSON.parse(localStorage.getItem('willitbreak-journal'));
+  if (Array.isArray(saved)) {
+    for (const e of saved.slice(-200)) record(journal, e);
+  }
 } catch {
-  /* fresh tally */
+  /* fresh journal */
 }
-function saveStats() {
+function saveJournal() {
   try {
-    localStorage.setItem('willitbreak-stats', JSON.stringify(stats));
+    localStorage.setItem(
+      'willitbreak-journal',
+      JSON.stringify(journal.entries.slice(-200)),
+    );
   } catch {
     /* fine */
   }
@@ -125,15 +134,17 @@ function predict(call) {
 
 function finishRound(actual) {
   verdict = actual;
-  stats.total++;
+  record(journal, {
+    level: `frog-bridge:${FROG_SIZES[frogIndex] * 1000}g`,
+    kind: 'binary',
+    prediction,
+    outcome: actual,
+    buildFailed: actual === 'breaks',
+    consultant: null,
+    at: Date.now(), // display metadata; the journal never reads it
+  });
+  saveJournal();
   const correct = prediction === actual;
-  if (correct) {
-    stats.right++;
-    stats.streak++;
-  } else {
-    stats.streak = 0;
-  }
-  saveStats();
 
   let why;
   if (actual === 'breaks') {
@@ -256,7 +267,8 @@ function draw() {
   $('working').textContent = activeMembers(model).length;
   $('freed').textContent = freed;
   $('maxu').textContent = `${Math.round(maxU * 100)}%`;
-  $('calib').textContent = stats.total === 0 ? '—' : `${stats.right}/${stats.total} right · streak ${stats.streak}`;
+  const c = calibration(journal);
+  $('calib').textContent = c.total === 0 ? '—' : `${c.hits}/${c.total} right · streak ${c.streak}`;
 }
 
 $('bigger').onclick = () => {

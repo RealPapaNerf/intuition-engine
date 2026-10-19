@@ -44,6 +44,17 @@ a hypothesis with a test plan, not a doctrine. Specifically:
   you don't know, iterating without fear. So the framework promises
   the meta-loop, hopes for broader intuition, and **measures both**
   instead of assuming either.
+- **The claim, precisely** (refined 2026-10-19, see
+  `decisions/2026-10-19-brainstorm.md`): the engine does *not* train
+  kids to "smell" a wrong AI answer without knowing the subject —
+  automation-bias and jagged-frontier studies cut against that, and
+  textual tells of wrongness expire with every model generation. It
+  trains kids to **know when they don't know, and know what check to
+  run** — plus knowing what real understanding feels like from having
+  built it deeply once, so they recognize its absence elsewhere. Near
+  transfer (an ER doctor picking up an adjacent specialty) is real
+  because the schema is shared; AI may widen what counts as "near,"
+  and that is the sharper, testable form of the generalist bet.
 - **Knowledge is not optional, it's a by-product.** "Kids don't need
   the formula" does not mean kids end up empty: intuition needs
   furniture in the head, and a kid who plays a season genuinely knows
@@ -125,6 +136,41 @@ physiology model (predict what the vitals do before you intervene);
 comedy's — the hardest, maybe a later one — an audience model honest
 enough to be worth predicting.
 
+## Adaptation and its leash
+
+(Decided 2026-10-19.) The "lazy path" — skip thinking, just run the
+build — is a symptom with four causes, and only one is disengagement:
+**bored** (bands narrow, predictions right, few attempts),
+**overwhelmed** (bands wide, builds failing, attempts stalling), the
+**rational experimenter** (bands junk, but each build changes one
+variable and results improve), and a **different goal** (sim-breaking,
+score-chasing — which is invariant 4's badge, not a problem).
+
+- **The detector is throwaway predictions, never build count**: bands
+  that never narrow, bands wide enough to always win, numbers that
+  don't move between attempts. A kid with honest, narrowing bands may
+  run as many builds as they like.
+- **The automatic response ladder**, escalating only while the signal
+  persists: raise the cost of the sim (slower runs or a build budget,
+  so thinking becomes the cheap path again, as at the kitchen table
+  where spaghetti is expensive); change skin; adjust depth (down for
+  the overwhelmed pattern, up for the bored one); flag the adult.
+- **The hard constraint — the line between this engine and a feed:**
+  adaptation optimizes for *prediction quality improving*, never for
+  session length or time-on-task. The adaptation code takes no
+  engagement-time input, and a test asserts its outputs are invariant
+  to session duration.
+- **Debriefs**: run after a failed build or a throwaway streak, never
+  after every level (a toll). The core question is *"what were you
+  trying to find out with that build?"* — an experimenter has an
+  answer; a disengaged kid doesn't. The coach **never classifies the
+  kid** ("you seem bored" breaks invariant 5 and gets gamed within a
+  week); the kid's answer plus the calibration evidence go to the
+  adult as a flagged diagnosis, and the adult decides.
+- **Visibility**: the flag and its evidence are adult-only. The kid's
+  visible calibration stat stays what it was — the prestige score —
+  and the kid never sees "your bands haven't narrowed in six levels."
+
 ## How we'd know it's working
 
 The framework is instrumented by design — the scoring stats *are* the
@@ -133,8 +179,9 @@ research instruments:
 - **Calibration curves** per concept, over months: do the bands narrow?
 - **Trust calibration**: does the kid beat chance at knowing when the
   Consultant is wrong, and improve?
-- **Smell tests**: planted wrong answers, delivered confidently — does
-  the flag rate rise?
+- **Planted-error catch rate**: planted wrong answers, delivered
+  confidently — are they caught, and caught earlier, by running the
+  right check?
 - **Invention rate**: Museum entries confirmed by the adult.
 - **Transfer probes** — the test of the whole generalist bet: after a
   season in pack A, does a kid learn pack B's first units faster than
