@@ -1,7 +1,35 @@
 export { makeModel, addNode, addMember, activeMembers, utilization } from './model.js';
 export { step, settle, kineticEnergy, checkBreaks } from './solver.js';
-export { shed, makeGoal } from './shed.js';
+export { shed, shedSteps, makeGoal } from './shed.js';
 export { ANT, WOOD, SILK } from './materials.js';
+export { SPAN_GAP } from './archetypes.js';
+export {
+  pointKey,
+  linkKey,
+  makeBlueprint,
+  isAnchor,
+  inBounds,
+  antsLeft,
+  hasLink,
+  isJoint,
+  isHeld,
+  checkLink,
+  addLink,
+  removeLink,
+  looseLinks,
+  pruneLoose,
+  buildModel,
+  findRoute,
+} from './blueprint.js';
+export {
+  CROSSING_TIMING,
+  makeCrossing,
+  advanceCrossing,
+  cargoPosition,
+  runCrossing,
+  crossingCases,
+  SHED_MARGIN,
+} from './crossing.js';
 export {
   makeJournal,
   record,

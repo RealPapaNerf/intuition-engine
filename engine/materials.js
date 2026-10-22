@@ -12,6 +12,10 @@
 //   tensionOnly     bool    — if true, the member goes slack instead of
 //                             pushing back (an ant cannot push)
 //   damping         [N·s/m] — axial damping (silk absorbs; wood barely)
+//   mass            [kg]    — one creature's mass, for materials that come
+//                             one creature per member. Placed members carry
+//                             it (blueprint.js); addMember stays massless
+//                             unless told otherwise.
 
 export const ANT = {
   name: 'ant',
@@ -20,6 +24,7 @@ export const ANT = {
   compressionLimit: 0,
   tensionOnly: true,
   damping: 1.5,
+  mass: 0.0015, // the old fixed demo bridge's weight per ant (≈40 g / 25)
 };
 
 export const WOOD = {

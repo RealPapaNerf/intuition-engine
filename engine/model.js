@@ -13,12 +13,16 @@ export function addNode(model, { x, y, mass = 0.01, fixed = false }) {
 }
 
 // restLength defaults to the as-built distance: members are born unstressed.
+// Members are massless unless given a mass: hand-built models put mass on
+// nodes exactly where their hand calc says. Placed creatures (see
+// blueprint.js) carry their own.
 export function addMember(model, a, b, material, restLength) {
   const m = {
     a,
     b,
     material,
     restLength: restLength ?? Math.hypot(b.x - a.x, b.y - a.y),
+    mass: 0, // [kg] the member's own; the solver hangs half on each end
     broken: false,
     force: 0, // axial force [N]: + tension, − compression (updated each step)
   };

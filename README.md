@@ -57,9 +57,9 @@ The stack, top to bottom:
 |---|---|
 | `docs/philosophy.md` | The plan of record: mission, invariants, the domain pack contract, and how we'd know it's working |
 | `docs/` | The domain pack briefs (engineering, negotiation) |
-| `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, dynamic relaxation for statics, breakage, and member-shedding topology optimization |
-| `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding |
-| `demo/` | The current playable: Will It Break — predict gate, the frog, the ant bridge, the lazy-colony shed |
+| `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, members with their own weight, dynamic relaxation for statics, breakage, and member-shedding topology optimization over every load case. Plus the first goal archetype (`archetypes.js`: span the gap), the kid's design as data (`blueprint.js`: placement rules, the jar, the frog's route), and the crossing (`crossing.js`: cargo walks the kid's bridge, judged quasi-statically) |
+| `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding, self-weight, the V bridge's W/(2·sinθ) and its snap and sag limits, the lever rule, placement and routing |
+| `demo/` | The current playable: Will It Break — the kid builds the bridge from a jar of ants, calls it, the frog walks it, and the lazy colony sheds the kid's own bridge |
 | `docs/decisions/` | Append-only decision log from design sessions. **Newest first; these override the briefs where they conflict** |
 | `CLAUDE.md` | Standing instructions for any session building here — read it first |
 
@@ -82,9 +82,14 @@ npm run demo   # serves the playable at http://localhost:8123/demo/index.html
       calibration tally
 - [x] The journal: separate commitments, catch scoring, throwaway
       detection, the adaptation ladder behind the feed-line test
+- [x] The kid places ants (authorship; decisions 2026-10-22 §8 step 1):
+      drag to lay ants from a 30-ant jar, the frog walks whatever the
+      kid built, the shed runs on the kid's own bridge. Sag against
+      tension is the first lesson the level teaches on its own: the
+      same ten ants snap pulled taut, hold hung in a U, and dunk the
+      frog hung too deep
 - [ ] **Next (build order decided — decisions 2026-10-22 §8):**
-      the kid places ants (authorship)
-- [ ] Strain language + skin manifests + the same-archetype toggle
+      strain language + skin manifests + the same-archetype toggle
 - [ ] Import portal (glTF from an allowlist, educator-curated)
 - [ ] Band predictions with error bands (measure mode)
 - [ ] The Consultant; the AI coach
