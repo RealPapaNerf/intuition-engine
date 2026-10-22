@@ -59,8 +59,9 @@ The stack, top to bottom:
 | `docs/` | The domain pack briefs (engineering, negotiation) |
 | `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, members with their own weight, dynamic relaxation for statics, breakage, and member-shedding topology optimization over every load case. Plus the first goal archetype (`archetypes.js`: span the gap), the kid's design as data (`blueprint.js`: placement rules, the jar, the frog's route), and the crossing (`crossing.js`: cargo walks the kid's bridge, judged quasi-statically). The invariant visual layer too: the strain language every skin performs (`strain.js`: droop, grip, tremble, slip, recoil) and the skin boundary (`manifest.js`: a manifest may hold only pictures and names; the physics is frozen) |
 | `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding, self-weight, the V bridge's W/(2·sinθ) and its snap and sag limits, the lever rule, placement and routing, the droop curve's length and the recoil's energy, and manifests that try to carry physics |
+| `negotiation/` | Pack #2's honest core (decisions 2026-10-22, the lens): the hidden brief in the MBA simulation's own format (`brief.js`: issues, options, a point schedule per party, reservation values, caps; Pareto frontier, money on the table), the trust meter's fixed rules (`trust.js`), the scripted counterpart that plays its brief (`counterpart.js`), the predict gate (`prep.js`), the question-only lens (`lens.js`), and the first brief, The Offer Letter (`scenarios/`) |
 | `skins/` | The starter skins (decisions 2026-10-22 §6): ants, stuffed animals, knotted sheets — the same tension chain in three costumes, original and generic |
-| `demo/` | The current playable: Will It Break — the kid builds the bridge, calls it, the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it) |
+| `demo/` | The current playables: Will It Break — the kid builds the bridge, calls it, the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it). And The Lens (`lens.html`) — negotiation practice with a coach in your eye line: commit your read of the other side, talk, see the replay |
 | `docs/decisions/` | Append-only decision log from design sessions. **Newest first; these override the briefs where they conflict** |
 | `CLAUDE.md` | Standing instructions for any session building here — read it first |
 
@@ -68,7 +69,8 @@ The stack, top to bottom:
 
 ```bash
 npm test       # validates the engine against hand calculations
-npm run demo   # serves the playable at http://localhost:8123/demo/index.html
+npm run demo   # serves the playables at http://localhost:8123/demo/index.html
+               # and http://localhost:8123/demo/lens.html
 ```
 
 (The demo needs the server: browsers block ES-module imports over
@@ -94,6 +96,12 @@ npm run demo   # serves the playable at http://localhost:8123/demo/index.html
       recoil at the speed their stored strain energy gives them, in
       every skin; three starter skins; flip costumes at any moment
       and every number on screen stays put
+- [x] The negotiators pack opens (decisions 2026-10-22, the lens):
+      hidden briefs with point schedules as honest ground truth, the
+      trust meter by fixed rules, a scripted counterpart, the predict
+      gate before the first word and before every offer, and the
+      lens — the question-only coach in the eye line, trust meter
+      shown only in the replay. The Offer Letter is the first brief
 - [ ] **Next (build order decided — decisions 2026-10-22 §8):**
       import portal (glTF from an allowlist, educator-curated) — a
       manifest editor pointed at a CC library
