@@ -59,22 +59,32 @@ The stack, top to bottom:
 | `docs/` | The domain pack briefs (engineering, negotiation) |
 | `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, dynamic relaxation for statics, breakage, and member-shedding topology optimization |
 | `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding |
-| `demo/` | The first playable: an ant bridge, a frog, and the lazy-colony shed. Open `demo/index.html` in a browser — no build step |
+| `demo/` | The current playable: Will It Break — predict gate, the frog, the ant bridge, the lazy-colony shed |
+| `docs/decisions/` | Append-only decision log from design sessions. **Newest first; these override the briefs where they conflict** |
+| `CLAUDE.md` | Standing instructions for any session building here — read it first |
 
 ## Running it
 
 ```bash
-npm test              # validates the engine against hand calculations
-xdg-open demo/index.html   # or just open it in any browser
+npm test       # validates the engine against hand calculations
+npm run demo   # serves the playable at http://localhost:8123/demo/index.html
 ```
+
+(The demo needs the server: browsers block ES-module imports over
+`file://`.)
 
 ## Status
 
-- [x] Framework plans (both tracks)
+- [x] Framework plans (both tracks), philosophy, decision log
 - [x] Engine v0: statics by dynamic relaxation, honest materials,
       breakage, ant-shedding topology optimization (unit 16)
-- [x] Demo: frog + ant bridge + shed
-- [ ] The frog game proper (predict gate, levels, feel-mode UI)
-- [ ] Scoreboard with units, calibration score
-- [ ] The Consultant
-- [ ] Skin generation and the AI coach
+- [x] The predict gate: Will It Break with binary calls and the
+      calibration tally
+- [x] The journal: separate commitments, catch scoring, throwaway
+      detection, the adaptation ladder behind the feed-line test
+- [ ] **Next (build order decided — decisions 2026-10-22 §8):**
+      the kid places ants (authorship)
+- [ ] Strain language + skin manifests + the same-archetype toggle
+- [ ] Import portal (glTF from an allowlist, educator-curated)
+- [ ] Band predictions with error bands (measure mode)
+- [ ] The Consultant; the AI coach
