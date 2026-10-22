@@ -8,6 +8,7 @@
 // y up). Units are SI throughout, like materials.js.
 
 import { ANT } from './materials.js';
+import { deepFreeze } from './freeze.js';
 
 // Span the gap: get the cargo from one bank to the other over links the
 // kid places, under budget. The goal, checked by physics and never by
@@ -34,16 +35,18 @@ function bankColumn(i) {
   return points;
 }
 
-export const SPAN_GAP = Object.freeze({
+// Frozen all the way down: a skin, or anything else at runtime, cannot
+// change a single honest number of the level it dresses.
+export const SPAN_GAP = deepFreeze({
   id: 'span-gap',
   material: ANT,
   jar: 30, // links the kid may place                      REVISIT
   step: 0.1,
-  bounds: Object.freeze({ iMin: 0, iMax: I_MAX, jMin: J_MIN, jMax: J_MAX }),
-  anchors: Object.freeze([...bankColumn(0), ...bankColumn(I_MAX)]),
-  start: Object.freeze([0, 0]),
-  end: Object.freeze([I_MAX, 0]),
+  bounds: { iMin: 0, iMax: I_MAX, jMin: J_MIN, jMax: J_MAX },
+  anchors: [...bankColumn(0), ...bankColumn(I_MAX)],
+  start: [0, 0],
+  end: [I_MAX, 0],
   waterY: -0.4,
   dryY: -0.36, // the cargo stays dry above this
-  cargo: Object.freeze([0.02, 0.05, 0.1, 0.2]), // kg
+  cargo: [0.02, 0.05, 0.1, 0.2], // kg
 });

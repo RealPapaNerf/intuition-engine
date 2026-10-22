@@ -16,8 +16,11 @@
 //                             one creature per member. Placed members carry
 //                             it (blueprint.js); addMember stays massless
 //                             unless told otherwise.
+//
+// Frozen: these are the honest parameters, and nothing at runtime — a
+// skin least of all — may change them (decisions 2026-10-22 §4).
 
-export const ANT = {
+export const ANT = Object.freeze({
   name: 'ant',
   axialStiffness: 60,
   tensionLimit: 1.2,
@@ -25,22 +28,22 @@ export const ANT = {
   tensionOnly: true,
   damping: 1.5,
   mass: 0.0015, // the old fixed demo bridge's weight per ant (≈40 g / 25)
-};
+});
 
-export const WOOD = {
+export const WOOD = Object.freeze({
   name: 'wood',
   axialStiffness: 5000,
   tensionLimit: 40,
   compressionLimit: 40,
   tensionOnly: false,
   damping: 2.0,
-};
+});
 
-export const SILK = {
+export const SILK = Object.freeze({
   name: 'silk',
   axialStiffness: 8,
   tensionLimit: 2.5,
   compressionLimit: 0,
   tensionOnly: true,
   damping: 6.0,
-};
+});
