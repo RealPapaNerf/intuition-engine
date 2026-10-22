@@ -7,9 +7,17 @@
 // Freed nodes that no longer touch the structure walk away (pruned), so
 // they don't rain through the scene forever.
 //
-// goal(model) -> boolean is checked after every settle, and must not
-// mutate the model. Levels build goals from what must be TRUE (deck
-// height, nothing overloaded), never from method.
+// goal(model, caseIndex) -> boolean is checked after every settle, and
+// must not mutate the model. Levels build goals from what must be TRUE
+// (deck height, nothing overloaded), never from method.
+//
+// loadCases (optional): functions that each put the model into one load
+// case — the cargo standing on each joint of its route, say (see
+// crossingCases in crossing.js). Each must set every load it touches.
+// The structure must meet the goal in every case, and a member's
+// laziness is its highest utilization across them: an ant idle while the
+// frog is at one end may be essential when it is at the other. Omitted,
+// the model as it stands is the only case.
 
 import { activeMembers, utilization } from './model.js';
 import { settle } from './solver.js';
@@ -39,12 +47,45 @@ function pruneOrphans(model) {
   model.nodes = model.nodes.filter((n) => n.fixed || used.has(n));
 }
 
-export function shed(
+export function shed(model, opts) {
+  const steps = shedSteps(model, opts);
+  for (;;) {
+    const { done, value } = steps.next();
+    if (done) return value;
+  }
+}
+
+// The same shed, one decision at a time: yields { removed } or
+// { essential } after each member is tried, and returns what shed()
+// returns. A game can pump it a few decisions per frame and show each
+// ant letting go the moment the colony decides, instead of freezing
+// while it thinks.
+export function* shedSteps(
   model,
-  { removable = (m) => m.material.name === 'ant', goal, settleOpts } = {},
+  {
+    removable = (m) => m.material.name === 'ant',
+    goal,
+    settleOpts,
+    loadCases = [() => {}],
+  } = {},
 ) {
-  settle(model, settleOpts);
-  if (!goal(model)) {
+  // Settle every case; null at the first one that misses the goal, else
+  // each member's highest utilization across the cases.
+  const evaluate = () => {
+    const envelope = new Map();
+    for (let i = 0; i < loadCases.length; i++) {
+      loadCases[i](model);
+      settle(model, settleOpts);
+      if (!goal(model, i)) return null;
+      for (const m of activeMembers(model)) {
+        envelope.set(m, Math.max(envelope.get(m) ?? 0, utilization(m)));
+      }
+    }
+    return envelope;
+  };
+
+  let envelope = evaluate();
+  if (envelope === null) {
     return { feasible: false, removed: [], essential: [] };
   }
 
@@ -54,21 +95,24 @@ export function shed(
   for (;;) {
     const candidates = activeMembers(model)
       .filter((m) => removable(m) && !essential.has(m))
-      .sort((x, y) => utilization(x) - utilization(y));
+      .sort((x, y) => envelope.get(x) - envelope.get(y));
     if (candidates.length === 0) break;
 
     const laziest = candidates[0];
     const before = saveState(model);
     laziest.broken = true;
     laziest.force = 0;
-    settle(model, settleOpts);
+    const next = evaluate();
 
-    if (goal(model)) {
+    if (next !== null) {
       removed.push(laziest);
       pruneOrphans(model);
+      envelope = next;
+      yield { removed: laziest };
     } else {
       restoreState(model, before);
       essential.add(laziest);
+      yield { essential: laziest };
     }
   }
 

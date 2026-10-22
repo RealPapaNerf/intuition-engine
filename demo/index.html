@@ -18,45 +18,63 @@
     }
     h1 { margin: 4px 0 0; font-size: 1.3rem; }
     p.sub { margin: 0; color: #6b6354; font-size: 0.9rem; text-align: center; }
-    canvas { background: #dff0f7; border-radius: 10px; max-width: 100%; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    canvas {
+      background: #dff0f7;
+      border-radius: 10px;
+      max-width: 100%;
+      touch-action: none; /* dragging lays links; it must not scroll the page */
+      cursor: crosshair;
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    .row .label { color: #6b6354; font-size: 0.9rem; }
     button {
       font: inherit;
       padding: 8px 14px;
       border: 1px solid #b8ab8f;
       border-radius: 8px;
       background: #fffdf7;
+      color: #2b2620;
       cursor: pointer;
     }
     button:disabled { opacity: 0.5; cursor: default; }
-    .stats { display: flex; gap: 18px; font-size: 0.95rem; }
+    button[aria-pressed='true'] { background: #2b2620; color: #fffdf7; border-color: #2b2620; }
+    .stats { display: flex; gap: 18px; font-size: 0.95rem; flex-wrap: wrap; justify-content: center; }
     .stats b { font-variant-numeric: tabular-nums; }
-    #msg { min-height: 1.2em; font-weight: 600; }
+    #msg { min-height: 2.6em; font-weight: 600; text-align: center; max-width: 860px; }
+    .credit { margin: 0; font-size: 0.75rem; color: #8a8170; }
   </style>
 </head>
 <body>
-  <h1>Will It Break? 🐸🐜</h1>
+  <h1 id="title">Will It Break?</h1>
   <p class="sub">
-    The ants built a bridge. A frog wants to cross.<br />
+    <span id="subtitle"></span><br />
     <strong>Say it before you see it</strong> — then physics decides.
   </p>
   <canvas id="canvas" width="860" height="560"></canvas>
   <div class="row">
-    <button id="smaller">Smaller frog</button>
-    <button id="bigger">Bigger frog</button>
+    <button id="smaller"></button>
+    <button id="bigger"></button>
+    <button id="undo">Undo</button>
+    <button id="clear">Clear</button>
+  </div>
+  <div class="row">
     <button id="holds">It HOLDS 💪</button>
     <button id="breaks">It BREAKS 💥</button>
-    <button id="shed">Shed the lazy ants</button>
-    <button id="reset">New round</button>
+    <button id="shed"></button>
+    <button id="build">Build again</button>
+  </div>
+  <div class="row" id="skins">
+    <span class="label">Costume:</span>
   </div>
   <div class="stats">
-    <span>Frog: <b id="frog">Hopper (50 g)</b></span>
-    <span>Ants on the job: <b id="working">0</b></span>
-    <span>Back in the jar: <b id="freed">0</b></span>
-    <span>Hardest ant: <b id="maxu">0%</b></span>
+    <span><span id="cargoWord"></span>: <b id="frog"></b></span>
+    <span><span id="linksWord"></span> on the bridge: <b id="working">0</b></span>
+    <span>In the <span id="jarWord"></span>: <b id="jar">0</b></span>
+    <span>Hardest <span id="linkWord"></span>: <b id="maxu">—</b></span>
     <span>Your calls: <b id="calib">—</b></span>
   </div>
   <div id="msg"></div>
+  <p class="credit" id="credit"></p>
   <script type="module" src="./main.js"></script>
 </body>
 </html>

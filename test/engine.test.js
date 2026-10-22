@@ -163,3 +163,57 @@ test('the lazy colony: shedding frees ants and the bridge still holds', () => {
     }
   }
 });
+
+// Member self-weight (lumped mass): a member's mass hangs half on each
+// end. Hanging n massive ants in a vertical chain, link k from the top
+// carries everything below its upper end: (n − k + ½)·m·g. Ants weigh
+// ~0.015 N, so these settle to a tighter tolerance than the default (an
+// absolute kinetic-energy threshold, sized for frog-scale loads).
+const FINE = { tol: 1e-15, maxSteps: 400000 };
+
+test('self-weight: a hanging chain of ants, link k carries (n − k + ½)·m·g', () => {
+  const n = 5;
+  const model = makeModel();
+  let above = addNode(model, { x: 0, y: 0, fixed: true });
+  const links = [];
+  for (let k = 1; k <= n; k++) {
+    const below = addNode(model, { x: 0, y: -0.1 * k, mass: 0 });
+    const m = addMember(model, above, below, ANT);
+    m.mass = ANT.mass;
+    links.push(m);
+    above = below;
+  }
+
+  const { settled } = settle(model, FINE);
+  assert.ok(settled, 'should reach equilibrium');
+
+  const w = ANT.mass * model.gravity;
+  links.forEach((m, i) => {
+    const k = i + 1;
+    const want = (n - k + 0.5) * w;
+    assert.ok(relErr(m.force, want) < 1e-3, `link ${k}: ${m.force} vs ${want}`);
+    // and each stretches by its own T·L0/EA
+    const len = Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y);
+    const wantLen = 0.1 * (1 + want / ANT.axialStiffness);
+    assert.ok(relErr(len, wantLen) < 1e-3, `link ${k} length ${len} vs ${wantLen}`);
+  });
+});
+
+test('self-weight: a member that lets go stops weighing on the structure', () => {
+  const model = makeModel();
+  const top = addNode(model, { x: 0, y: 0, fixed: true });
+  const mid = addNode(model, { x: 0, y: -0.1, mass: 0 });
+  const bottom = addNode(model, { x: 0, y: -0.2, mass: 0 });
+  const upper = addMember(model, top, mid, ANT);
+  const lower = addMember(model, mid, bottom, ANT);
+  upper.mass = ANT.mass;
+  lower.mass = ANT.mass;
+  const w = ANT.mass * model.gravity;
+
+  settle(model, FINE);
+  assert.ok(relErr(upper.force, 1.5 * w) < 1e-3, `both hanging: ${upper.force}`);
+
+  lower.broken = true; // it let go: its whole weight leaves with it
+  settle(model, FINE);
+  assert.ok(relErr(upper.force, 0.5 * w) < 1e-3, `one left: ${upper.force}`);
+});

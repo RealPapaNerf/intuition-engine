@@ -57,9 +57,10 @@ The stack, top to bottom:
 |---|---|
 | `docs/philosophy.md` | The plan of record: mission, invariants, the domain pack contract, and how we'd know it's working |
 | `docs/` | The domain pack briefs (engineering, negotiation) |
-| `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, dynamic relaxation for statics, breakage, and member-shedding topology optimization |
-| `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding |
-| `demo/` | The current playable: Will It Break — predict gate, the frog, the ant bridge, the lazy-colony shed |
+| `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, members with their own weight, dynamic relaxation for statics, breakage, and member-shedding topology optimization over every load case. Plus the first goal archetype (`archetypes.js`: span the gap), the kid's design as data (`blueprint.js`: placement rules, the jar, the frog's route), and the crossing (`crossing.js`: cargo walks the kid's bridge, judged quasi-statically). The invariant visual layer too: the strain language every skin performs (`strain.js`: droop, grip, tremble, slip, recoil) and the skin boundary (`manifest.js`: a manifest may hold only pictures and names; the physics is frozen) |
+| `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding, self-weight, the V bridge's W/(2·sinθ) and its snap and sag limits, the lever rule, placement and routing, the droop curve's length and the recoil's energy, and manifests that try to carry physics |
+| `skins/` | The starter skins (decisions 2026-10-22 §6): ants, stuffed animals, knotted sheets — the same tension chain in three costumes, original and generic |
+| `demo/` | The current playable: Will It Break — the kid builds the bridge, calls it, the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it) |
 | `docs/decisions/` | Append-only decision log from design sessions. **Newest first; these override the briefs where they conflict** |
 | `CLAUDE.md` | Standing instructions for any session building here — read it first |
 
@@ -82,9 +83,19 @@ npm run demo   # serves the playable at http://localhost:8123/demo/index.html
       calibration tally
 - [x] The journal: separate commitments, catch scoring, throwaway
       detection, the adaptation ladder behind the feed-line test
+- [x] The kid places ants (authorship; decisions 2026-10-22 §8 step 1):
+      drag to lay ants from a 30-ant jar, the frog walks whatever the
+      kid built, the shed runs on the kid's own bridge. Sag against
+      tension is the first lesson the level teaches on its own: the
+      same ten ants snap pulled taut, hold hung in a U, and dunk the
+      frog hung too deep
+- [x] Strain language + skin manifests + the same-archetype toggle
+      (step 2): links droop, grip, tremble, slip one by one, and
+      recoil at the speed their stored strain energy gives them, in
+      every skin; three starter skins; flip costumes at any moment
+      and every number on screen stays put
 - [ ] **Next (build order decided — decisions 2026-10-22 §8):**
-      the kid places ants (authorship)
-- [ ] Strain language + skin manifests + the same-archetype toggle
-- [ ] Import portal (glTF from an allowlist, educator-curated)
+      import portal (glTF from an allowlist, educator-curated) — a
+      manifest editor pointed at a CC library
 - [ ] Band predictions with error bands (measure mode)
 - [ ] The Consultant; the AI coach

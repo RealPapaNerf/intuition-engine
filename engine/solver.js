@@ -5,10 +5,31 @@
 // dies, and the resting state IS the static equilibrium. One engine gives
 // both the frog standing still and the boulder hitting the silk net.
 
+// A node's moving mass: its own point mass (cargo, a hand-placed weight)
+// plus half of every intact member touching it — the lumped-mass model.
+// A member that has let go (snapped, or shed) no longer weighs on the
+// structure. Also counts each node's intact members, for the damping
+// clamp below.
+function lumpMasses(model) {
+  for (const n of model.nodes) {
+    n.totalMass = n.mass;
+    n.degree = 0;
+  }
+  for (const m of model.members) {
+    if (m.broken) continue;
+    m.a.degree++;
+    m.b.degree++;
+    if (!m.mass) continue;
+    m.a.totalMass += m.mass / 2;
+    m.b.totalMass += m.mass / 2;
+  }
+}
+
 export function step(model, dt) {
+  lumpMasses(model);
   for (const n of model.nodes) {
     n.fx = 0;
-    n.fy = n.fixed ? 0 : -n.mass * model.gravity;
+    n.fy = n.fixed ? 0 : -n.totalMass * model.gravity;
   }
 
   for (const m of model.members) {
@@ -28,12 +49,16 @@ export function step(model, dt) {
     // tension-only member transmits nothing, damping included. The
     // damping impulse is clamped to the one that would zero the relative
     // velocity this step — any more is numerically unstable for light
-    // nodes (it reverses the velocity and pumps energy in).
+    // nodes (it reverses the velocity and pumps energy in). Each member
+    // clamps against only its share of each end's mass: a joint where
+    // several members meet takes an impulse from every one of them, and
+    // whole-mass clamps would together overshoot and lock it into a
+    // step-by-step velocity flip that never dies.
     let ft = f;
     if (!(m.material.tensionOnly && f === 0)) {
       const relv = (m.b.vx - m.a.vx) * ux + (m.b.vy - m.a.vy) * uy;
-      const ma = m.a.fixed ? Infinity : m.a.mass;
-      const mb = m.b.fixed ? Infinity : m.b.mass;
+      const ma = m.a.fixed ? Infinity : m.a.totalMass / m.a.degree;
+      const mb = m.b.fixed ? Infinity : m.b.totalMass / m.b.degree;
       const mRed =
         ma === Infinity ? mb : mb === Infinity ? ma : (ma * mb) / (ma + mb);
       const fdMax = (mRed * Math.abs(relv)) / dt;
@@ -48,13 +73,15 @@ export function step(model, dt) {
   }
 
   for (const n of model.nodes) {
-    if (n.fixed) {
+    // Fixed, or an empty joint (every member on it let go, nothing
+    // standing on it): there is nothing there to move.
+    if (n.fixed || !(n.totalMass > 0)) {
       n.vx = 0;
       n.vy = 0;
       continue;
     }
-    n.vx += (n.fx / n.mass) * dt;
-    n.vy += (n.fy / n.mass) * dt;
+    n.vx += (n.fx / n.totalMass) * dt;
+    n.vy += (n.fy / n.totalMass) * dt;
     n.x += n.vx * dt;
     n.y += n.vy * dt;
   }
@@ -63,7 +90,8 @@ export function step(model, dt) {
 export function kineticEnergy(model) {
   let ke = 0;
   for (const n of model.nodes) {
-    if (!n.fixed) ke += 0.5 * n.mass * (n.vx * n.vx + n.vy * n.vy);
+    const mass = n.totalMass ?? n.mass;
+    if (!n.fixed) ke += 0.5 * mass * (n.vx * n.vx + n.vy * n.vy);
   }
   return ke;
 }
