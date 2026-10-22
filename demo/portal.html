@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Costume Portal</title>
+  <link rel="icon" href="data:," />
+  <style>
+    [hidden] { display: none !important; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f4efe4;
+      color: #2b2620;
+      margin: 0;
+      padding: 16px;
+    }
+    header { max-width: 1400px; margin: 0 auto 12px; }
+    h1 { margin: 4px 0; font-size: 1.3rem; }
+    h2 { font-size: 1rem; margin: 18px 0 8px; }
+    h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+    p { margin: 6px 0; }
+    .sub, .note { color: #6b6354; font-size: 0.9rem; }
+    a { color: #2f5d8a; }
+    .layout { display: grid; gap: 24px; max-width: 1400px; margin: 0 auto; grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1100px) {
+      .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+      .look { position: sticky; top: 12px; align-self: start; }
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+    button {
+      font: inherit;
+      padding: 7px 12px;
+      border: 1px solid #b8ab8f;
+      border-radius: 8px;
+      background: #fffdf7;
+      color: #2b2620;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    button[aria-pressed='true'] { background: #2b2620; color: #fffdf7; border-color: #2b2620; }
+    input[type='text'], input[type='password'], input[type='search'] {
+      font: inherit;
+      padding: 6px 8px;
+      border: 1px solid #b8ab8f;
+      border-radius: 6px;
+      background: #fffdf7;
+      color: #2b2620;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+    label.library { display: block; margin: 4px 0; }
+    #status { min-height: 1.4em; font-weight: 600; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+    .card { display: flex; flex-direction: column; gap: 4px; align-items: stretch; text-align: left; padding: 6px; }
+    .card img, .card .nothumb {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #e8e1d2;
+      display: grid;
+      place-items: center;
+      color: #8a8170;
+    }
+    .card strong { font-size: 0.85rem; overflow-wrap: anywhere; }
+    .card small { font-size: 0.75rem; color: #8e3b2a; }
+    .badge { display: inline-block; font-size: 0.7rem; padding: 1px 6px; border-radius: 10px; background: #dfeedd; color: #2e5a2a; margin: 1px 2px 0 0; }
+    .badge.refused { background: #f3dcd6; color: #8e3b2a; }
+    .card:disabled { opacity: 0.55; }
+    .words { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; }
+    .words label { display: flex; flex-direction: column; font-size: 0.8rem; color: #6b6354; gap: 2px; }
+    canvas { width: 100%; height: auto; border-radius: 10px; background: #dff0f7; }
+    .credit { font-size: 0.75rem; color: #8a8170; }
+    .credit a { color: inherit; }
+    #problems { color: #8e3b2a; font-size: 0.85rem; margin: 6px 0; padding-left: 18px; }
+    .gate { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; font-weight: 600; }
+    #saved { padding-left: 0; list-style: none; margin: 0; }
+    #saved li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+    #saved li .why { color: #8e3b2a; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="note"><a href="./index.html">← Back to the game</a></p>
+    <h1>Costume portal <span class="note">(for grown-ups)</span></h1>
+    <p class="sub">
+      Dress <em>Will It Break?</em> in free 3D models from a Creative Commons library. You choose
+      every model, and nothing reaches the game until you’ve looked and saved. A costume changes the
+      pictures and the names, never the physics.
+    </p>
+  </header>
+  <main class="layout">
+    <div class="controls">
+      <h2>1. Start from a costume</h2>
+      <div class="row" id="bases"></div>
+      <div class="row">
+        <label>Name <input type="text" id="name" maxlength="60" /></label>
+        <label>Icon <input type="text" id="icon" maxlength="8" size="3" /></label>
+      </div>
+      <div class="row">
+        <label style="flex: 1">Credit line <input type="text" id="attribution" maxlength="120" style="width: 100%" /></label>
+      </div>
+
+      <h2>2. Choose what to dress</h2>
+      <div class="row" id="slots"></div>
+
+      <h2>3. Find a model for <span id="slotName"></span></h2>
+      <div id="libraries"></div>
+      <form class="row" id="keyRow" hidden>
+        <label>Poly Pizza API key <input type="password" id="key" autocomplete="off" spellcheck="false" /></label>
+        <a id="keyHelp" target="_blank" rel="noopener noreferrer">Get a free key</a>
+        <span class="note">Kept on this device, and sent only to Poly Pizza.</span>
+      </form>
+      <form class="row" id="searchForm">
+        <input type="search" id="query" maxlength="40" placeholder="fox, duck, robot…" />
+        <button id="searchButton">Search</button>
+      </form>
+      <p id="status" role="status"></p>
+      <div id="results" class="grid"></div>
+
+      <h2>4. Picture it</h2>
+      <p class="note" id="pictureNote"></p>
+      <div class="row" id="viewRow">
+        <button id="side" data-view="side">Side</button>
+        <button id="front" data-view="front">Front</button>
+        <button id="top" data-view="top">Top</button>
+        <button id="turn">Turn ⟳</button>
+        <button id="mirror">Mirror ⇋</button>
+        <button id="everyCargo">Same on every cargo</button>
+        <button id="putBack">Put the original back</button>
+      </div>
+
+      <h2>5. Names</h2>
+      <div class="words" id="words"></div>
+      <h3>Cargo, lightest first</h3>
+      <div class="words" id="cargoNames"></div>
+    </div>
+
+    <aside class="look">
+      <canvas id="preview" width="860" height="560"></canvas>
+      <p class="credit" id="credit"></p>
+      <ul id="problems"></ul>
+      <label class="gate"><input type="checkbox" id="curated" /> I’ve looked at every model in this costume, and it’s right for the kids who will see it.</label>
+      <div class="row">
+        <button id="save" disabled>Save costume</button>
+        <a href="./index.html" target="_blank" rel="noopener">Open the game</a>
+      </div>
+      <p id="saveStatus" role="status"></p>
+      <h3>Saved on this device</h3>
+      <ul id="saved"></ul>
+    </aside>
+  </main>
+  <script type="module" src="./portal.js"></script>
+</body>
+</html>

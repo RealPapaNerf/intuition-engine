@@ -3,7 +3,7 @@ export { step, settle, kineticEnergy, checkBreaks } from './solver.js';
 export { shed, shedSteps, makeGoal } from './shed.js';
 export { ANT, WOOD, SILK } from './materials.js';
 export { SPAN_GAP } from './archetypes.js';
-export { validateSkin } from './manifest.js';
+export { validateSkin, LICENSES, SPRITE_MARGIN, creditParts, creditText, costumeCredits } from './manifest.js';
 export { deepFreeze } from './freeze.js';
 export {
   pointKey,
