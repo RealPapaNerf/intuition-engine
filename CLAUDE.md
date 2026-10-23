@@ -31,6 +31,12 @@ thing.
 4. The pack briefs (`intuitive-engineers-brief.md`,
    `intuitive-negotiators-brief.md`) for the long-range design.
 
+The negotiators pack (`negotiation/`, `demo/lens.html`) runs in
+parallel to the engineers pack — see
+`docs/decisions/2026-10-22-the-lens.md`. The lens only asks; the trust
+meter is never shown live; a brief's numbers are frozen like a
+material's.
+
 **The current build order is decided** — see
 `docs/decisions/2026-10-22-genre-skins-sequencing.md` §8:
 (1) the kid places ants (authorship — the game begins when the kid
