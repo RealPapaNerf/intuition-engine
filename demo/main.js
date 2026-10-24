@@ -15,6 +15,10 @@
 // moment, with the same numbers on screen: the costume changes, the
 // physics doesn't. Nothing in this file decides an outcome, and no skin
 // is ever handed to the physics.
+//
+// Step 3 — costumes an educator makes in the costume portal
+// (demo/portal.html) from allowlisted CC models join the row, checked as
+// manifests again here, and their models are credited under the game.
 
 import {
   SPAN_GAP,
@@ -65,6 +69,7 @@ import {
   drawCaption,
   restingLink,
 } from './render.js';
+import { writeCredits } from './credits.js';
 
 const LEVEL = SPAN_GAP;
 const COSTUMES = SKINS.map((s) => validateSkin(s, LEVEL)); // a bad skin fails loudly, here
@@ -130,10 +135,45 @@ function replay(links) {
     pending = left;
   }
 }
+// Costumes made in the portal on this device. The game trusts no stored
+// file: each is checked as a manifest again, and one that fails is left
+// out with a note in the console, never fatal. A starter's id can't be
+// taken.
+const MADE = 'willitbreak-costumes';
+let made = new Map(); // id → [the stored text, the checked costume]
+let costumes = COSTUMES;
+function loadCostumes() {
+  let stored = [];
+  try {
+    stored = JSON.parse(localStorage.getItem(MADE)) ?? [];
+  } catch {
+    /* none */
+  }
+  const next = new Map();
+  for (const s of Array.isArray(stored) ? stored : []) {
+    const id = s?.id;
+    if (next.has(id) || COSTUMES.some((c) => c.id === id)) continue;
+    const text = JSON.stringify(s);
+    const kept = made.get(id);
+    if (kept && kept[0] === text) {
+      next.set(id, kept); // unchanged: keep it, pictures already decoded
+      continue;
+    }
+    try {
+      next.set(id, [text, validateSkin(s, LEVEL)]);
+    } catch (e) {
+      console.warn(`A saved costume was left out. ${e.message}`);
+    }
+  }
+  made = next;
+  costumes = [...COSTUMES, ...[...made.values()].map(([, c]) => c)];
+}
+loadCostumes();
+
 try {
   design = replay(JSON.parse(localStorage.getItem('willitbreak-design'))?.links);
   const prefs = JSON.parse(localStorage.getItem('willitbreak-view')) ?? {};
-  skin = COSTUMES.find((s) => s.id === prefs.skin) ?? skin;
+  skin = costumes.find((s) => s.id === prefs.skin) ?? skin;
   numbers = prefs.numbers === true;
 } catch {
   /* start empty, in the first costume */
@@ -185,7 +225,7 @@ function say(words) {
 
 // Everything on the page that names a thing, in the current costume.
 function relabel() {
-  $('title').textContent = `Will It Break? ${skin.cargo[0].glyph}${skin.icon}`;
+  $('title').textContent = `Will It Break? ${skin.cargo[0].glyph ?? ''}${skin.icon}`;
   $('subtitle').textContent = `Build a bridge of ${w().links}. ${cap(an(w().cargo))} wants to cross.`;
   $('smaller').textContent = `Smaller ${w().cargo}`;
   $('bigger').textContent = `Bigger ${w().cargo}`;
@@ -195,7 +235,7 @@ function relabel() {
   $('jarWord').textContent = w().jar;
   $('linkWord').textContent = w().link;
   $('frog').textContent = cargoName();
-  $('credit').textContent = `Costume: ${skin.name} — ${skin.attribution}.`;
+  writeCredits($('credit'), skin);
   for (const b of document.querySelectorAll('[data-skin]')) {
     b.setAttribute('aria-pressed', String(b.dataset.skin === skin.id));
   }
@@ -718,21 +758,6 @@ $('breaks').onclick = () => predict('breaks');
 $('shed').onclick = startShed;
 $('build').onclick = () => toBuild();
 
-// The costumes: any time, mid-crossing included. The physics never
-// hears about it.
-for (const s of COSTUMES) {
-  const b = document.createElement('button');
-  b.dataset.skin = s.id;
-  b.textContent = `${s.icon} ${s.name}`;
-  b.onclick = () => {
-    if (s === skin) return;
-    skin = s;
-    banner = BANNER_FRAMES;
-    saveView();
-    relabel();
-  };
-  $('skins').append(b);
-}
 const numbersButton = document.createElement('button');
 numbersButton.id = 'numbers';
 numbersButton.textContent = 'Show the numbers';
@@ -742,6 +767,43 @@ numbersButton.onclick = () => {
   relabel();
 };
 $('skins').append(numbersButton);
+
+// The costumes: any time, mid-crossing included. The physics never
+// hears about it.
+function wear(s) {
+  if (s === skin) return;
+  skin = s;
+  banner = BANNER_FRAMES;
+  saveView();
+  relabel();
+}
+function costumeButtons() {
+  for (const b of document.querySelectorAll('[data-skin]')) b.remove();
+  for (const s of costumes) {
+    const b = document.createElement('button');
+    b.dataset.skin = s.id;
+    b.textContent = `${s.icon} ${s.name}`;
+    b.onclick = () => wear(s);
+    numbersButton.before(b);
+  }
+}
+costumeButtons();
+
+// The portal saves in another tab; its costumes arrive here as it does.
+// One being worn that was changed is put on again, and one deleted is
+// taken off.
+addEventListener('storage', (e) => {
+  if (e.key !== MADE && e.key !== null) return;
+  loadCostumes();
+  costumeButtons();
+  const now = costumes.find((s) => s.id === skin.id) ?? COSTUMES[0];
+  if (now !== skin) {
+    skin = now;
+    banner = BANNER_FRAMES;
+    saveView();
+  }
+  relabel();
+});
 
 toBuild();
 relabel();

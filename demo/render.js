@@ -7,9 +7,11 @@
 //   pictures, as a glow around each picture, as a rim on cloth — the
 //   strain performance (engine/strain.js), the slow-motion break, and
 //   the numbers;
-//   the costume: whatever the skin's manifest binds to each primitive.
+//   the costume: whatever the skin's manifest binds to each primitive —
+//   a glyph, a strip of cloth, or an imported model's picture, all drawn
+//   through the same moves.
 
-import { chainPoses, along, recoilSpeed, isAnchor } from '../engine/index.js';
+import { chainPoses, along, recoilSpeed, isAnchor, SPRITE_MARGIN } from '../engine/index.js';
 
 export const S = 660; // px per meter
 export const tx = (x) => (x + 0.15) * S;
@@ -209,7 +211,24 @@ function upright(angle) {
   return a;
 }
 
-function drawGlyph(ctx, glyph, x, y, angle, px, axis, glow) {
+// An imported model's picture, decoded once per binding. Until it has
+// decoded (a frame, for a picture carried in the manifest) nothing is
+// drawn; the physics is not waiting on it.
+const sprites = new WeakMap();
+function spriteOf(model) {
+  let img = sprites.get(model);
+  if (!img) {
+    img = new Image();
+    img.src = model.sprite;
+    sprites.set(model, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+// A binding's picture — its glyph, or its model — `px` across at its
+// longest, centered on (x, y) or, anchored 'bottom', standing on it;
+// turned to the chain's heading, kept upright, glowing with the stress.
+function drawPicture(ctx, pic, x, y, { angle = 0, px, axis, glow = 0, anchor = 'center' }) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(upright(-angle + (axis === 'across' ? Math.PI / 2 : 0)));
@@ -217,10 +236,22 @@ function drawGlyph(ctx, glyph, x, y, angle, px, axis, glow) {
     ctx.shadowColor = stressColor(glow, 0.9);
     ctx.shadowBlur = 4 + 14 * glow;
   }
-  ctx.font = `${px / 0.9}px serif`; // the art fills ~0.9 em
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(glyph, 0, 0);
+  if (pic.model) {
+    const img = spriteOf(pic.model);
+    if (img) {
+      // The portal framed the model inside a margin; the margin isn't art.
+      const k = px / ((1 - 2 * SPRITE_MARGIN) * Math.max(img.naturalWidth, img.naturalHeight));
+      const w = img.naturalWidth * k;
+      const h = img.naturalHeight * k;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, -w / 2, anchor === 'bottom' ? -h * (1 - SPRITE_MARGIN) : -h / 2, w, h);
+    }
+  } else {
+    ctx.font = `${px / 0.9}px serif`; // the art fills ~0.9 em
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pic.glyph, 0, 0);
+  }
   ctx.restore();
 }
 
@@ -251,7 +282,7 @@ export function drawLink(ctx, level, skin, m, { t = 0, seed = 0, heat } = {}) {
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
     } else {
-      drawGlyph(ctx, b.glyph, tx(it.x), ty(it.y), it.angle, size * S, b.axis, slack ? 0 : u);
+      drawPicture(ctx, b, tx(it.x), ty(it.y), { angle: it.angle, px: size * S, axis: b.axis, glow: slack ? 0 : u });
     }
   }
 }
@@ -259,13 +290,8 @@ export function drawLink(ctx, level, skin, m, { t = 0, seed = 0, heat } = {}) {
 // Knots, stitches: what the skin draws where links meet.
 export function drawJoints(ctx, level, skin, points) {
   if (!skin.joint) return;
-  const px = level.step * S * (skin.joint.scale ?? 1) * 0.5;
-  ctx.font = `${px}px serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  for (const p of points) ctx.fillText(skin.joint.glyph, tx(p.x), ty(p.y));
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
+  const px = level.step * S * (skin.joint.scale ?? 1) * 0.45;
+  for (const p of points) drawPicture(ctx, skin.joint, tx(p.x), ty(p.y), { px });
 }
 
 // --- Cargo ---------------------------------------------------------------------
@@ -276,11 +302,14 @@ export function cargoPx(level, skin, index) {
 
 export function drawCargo(ctx, level, skin, index, pos) {
   const px = cargoPx(level, skin, index);
+  const cargo = skin.cargo[index];
   ctx.font = `${px}px serif`;
   if (pos.y < level.waterY) {
     ctx.fillText(skin.scene.water.splash, tx(pos.x) - px / 2, ty(level.waterY) + 8); // in it went
+  } else if (cargo.model) {
+    drawPicture(ctx, cargo, tx(pos.x), ty(pos.y) - 2, { px, anchor: 'bottom' }); // feet on the bridge
   } else {
-    ctx.fillText(skin.cargo[index].glyph, tx(pos.x) - px / 2, ty(pos.y) - 4);
+    ctx.fillText(cargo.glyph, tx(pos.x) - px / 2, ty(pos.y) - 4);
   }
 }
 
@@ -294,7 +323,8 @@ function holdingEnd(m) {
 }
 
 // Freed pictures: they leave at the speed the link's stored strain
-// energy gives them (engine/strain.js) and fall under g.
+// energy gives them (engine/strain.js) and fall under g. They fall in
+// whatever costume is on, like everything else.
 export function spawnDebris(debris, level, skin, m, { seed = 0 } = {}) {
   const b = skin.link;
   const size = instanceSize(level, skin, m);
@@ -314,7 +344,7 @@ export function spawnDebris(debris, level, skin, m, { seed = 0 } = {}) {
       angle: it.angle,
       spin: (seed % 2 ? 1 : -1) * (5 + (seed % 5)),
       size,
-      color: b.strip ? b.strip[seed % b.strip.length] : null,
+      seed,
       splash: 0,
       landed: 0,
     });
@@ -352,14 +382,15 @@ export function drawDebris(ctx, level, skin, debris) {
     if (d.splash > 0) {
       ctx.font = '22px serif';
       ctx.fillText(skin.scene.water.splash, tx(d.x) - 11, ty(level.waterY) + 6);
-    } else if (d.color) {
+    } else if (skin.link.strip) {
       const hx = (Math.cos(d.angle) * d.size) / 2;
       const hy = (Math.sin(d.angle) * d.size) / 2;
+      const color = skin.link.strip[d.seed % skin.link.strip.length];
       ctx.lineCap = 'round';
-      strokePoints(ctx, [{ x: d.x - hx, y: d.y - hy }, { x: d.x + hx, y: d.y + hy }], d.color, STRIP_PX);
+      strokePoints(ctx, [{ x: d.x - hx, y: d.y - hy }, { x: d.x + hx, y: d.y + hy }], color, STRIP_PX);
       ctx.lineCap = 'butt';
     } else {
-      drawGlyph(ctx, skin.link.glyph, tx(d.x), ty(d.y), d.angle, d.size * S, skin.link.axis, 0);
+      drawPicture(ctx, skin.link, tx(d.x), ty(d.y), { angle: d.angle, px: d.size * S, axis: skin.link.axis });
     }
     ctx.globalAlpha = 1;
   }
