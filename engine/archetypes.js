@@ -49,4 +49,10 @@ export const SPAN_GAP = deepFreeze({
   waterY: -0.4,
   dryY: -0.36, // the cargo stays dry above this
   cargo: [0.02, 0.05, 0.1, 0.2], // kg
+  // The scale: measure mode's frozen instrument (decisions 2026-10-24).
+  // The ladder tries nothing past max and reads to resolution; the
+  // journal judges band widths against max. Both numbers REVISIT: picked
+  // so a strong 30-ant bridge fits under the top and the bisection stays
+  // under ten runs, awaiting Stage 0 data.
+  measure: { quantity: 'breaking-load', max: 0.5, resolution: 0.005 }, // kg
 });

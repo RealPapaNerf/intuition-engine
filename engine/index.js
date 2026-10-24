@@ -43,6 +43,7 @@ export {
   chainPoses,
   recoilSpeed,
 } from './strain.js';
+export { makeLadder, breakingLoad } from './measure.js';
 export {
   makeJournal,
   record,

@@ -57,12 +57,12 @@ The stack, top to bottom:
 |---|---|
 | `docs/philosophy.md` | The plan of record: mission, invariants, the domain pack contract, and how we'd know it's working |
 | `docs/` | The domain pack briefs (engineering, negotiation) |
-| `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, members with their own weight, dynamic relaxation for statics, breakage, and member-shedding topology optimization over every load case. Plus the first goal archetype (`archetypes.js`: span the gap), the kid's design as data (`blueprint.js`: placement rules, the jar, the frog's route), and the crossing (`crossing.js`: cargo walks the kid's bridge, judged quasi-statically). The invariant visual layer too: the strain language every skin performs (`strain.js`: droop, grip, tremble, slip, recoil) and the skin boundary (`manifest.js`: a manifest may hold only pictures and names, an imported model only as a picture with its credits under an accepted license; the physics is frozen) |
+| `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, members with their own weight, dynamic relaxation for statics, breakage, and member-shedding topology optimization over every load case. Plus the first goal archetype (`archetypes.js`: span the gap), the kid's design as data (`blueprint.js`: placement rules, the jar, the frog's route), and the crossing (`crossing.js`: cargo walks the kid's bridge, judged quasi-statically). The invariant visual layer too: the strain language every skin performs (`strain.js`: droop, grip, tremble, slip, recoil) and the skin boundary (`manifest.js`: a manifest may hold only pictures and names, an imported model only as a picture with its credits under an accepted license; the physics is frozen). And the scale (`measure.js`): a bridge's breaking load, measured by bisection over real crossings |
 | `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding, self-weight, the V bridge's W/(2·sinθ) and its snap and sag limits, the lever rule, placement and routing, the droop curve's length and the recoil's energy, and manifests that try to carry physics. Plus the import portal's rules: glTF parsing (transforms, strips, sparse data, refusals), the sprite rasterizer (framing, views, depth, light, textures), the license and host allowlist, the Poly Pizza door, and the import boundaries between engine, skins, portal and game |
 | `negotiation/` | Pack #2's honest core (decisions 2026-10-22, the lens): the hidden brief in the MBA simulation's own format (`brief.js`: issues, options, a point schedule per party, reservation values, caps; Pareto frontier, money on the table), the trust meter's fixed rules (`trust.js`), the scripted counterpart that plays its brief (`counterpart.js`), the predict gate (`prep.js`), the question-only lens (`lens.js`), and the first brief, The Offer Letter (`scenarios/`) |
 | `skins/` | The starter skins (decisions 2026-10-22 §6): ants, stuffed animals, knotted sheets — the same tension chain in three costumes, original and generic |
 | `portal/` | The import portal's machinery (decisions 2026-10-22 §5–6), no dependencies: `library.js` (the allowlist: which libraries, where their files may come from, which licenses a model may carry, and its credit line), `gltf.js` (a bounds-checked glTF 2.0 reader; Draco and meshopt refused by name), `sprite.js` (normalization, and a small software rasterizer that draws a model once, from a locked camera, into the picture a costume carries) |
-| `demo/` | The current playables: Will It Break — the kid builds the bridge, calls it, the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it). The Lens (`lens.html`) — negotiation practice with a coach in your eye line: commit your read of the other side, talk, see the replay. And `portal.html`, the costume portal for grown-ups: dress the game in CC models and credit them; `serve.js` is its door to Poly Pizza |
+| `demo/` | The current playables: Will It Break — the kid builds the bridge, calls it (Feel it: holds/breaks · Measure it: a band in grams, judged by the scale), the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it). The Lens (`lens.html`) — negotiation practice with a coach in your eye line: commit your read of the other side, talk, see the replay. And `portal.html`, the costume portal for grown-ups: dress the game in CC models and credit them; `serve.js` is its door to Poly Pizza |
 | `docs/decisions/` | Append-only decision log from design sessions. **Newest first; these override the briefs where they conflict** |
 | `CLAUDE.md` | Standing instructions for any session building here — read it first |
 
@@ -126,7 +126,15 @@ costume row.
       that they've looked. The allowlist and the credit format answer
       the decision log's open item and await a decision file to ratify
       them
-- [ ] **Next: not decided yet.** The 2026-10-22 build order (§8) is
-      done; a new decision file picks what follows
-- [ ] Band predictions with error bands (measure mode)
+- [x] Band predictions (measure mode; decisions 2026-10-24): the kid
+      commits "my bridge holds between __ and __ grams," then the scale
+      — bisection over full, honest crossings of their own bridge —
+      finds the heaviest cargo that crosses dry, narrating every probe,
+      and the heaviest load that held walks the bridge on stage. The
+      scale is a frozen instrument on the archetype (0–500 g at 5 g,
+      REVISIT); the journal's band machinery, already built, scores the
+      reading against the band and keeps feeding the width detectors
+- [ ] **Next: not decided yet.** A new decision file picks what
+      follows; the queued candidates are the Consultant / AI coach and
+      sag-depth bands, plus the portal's still-open license ratification
 - [ ] The Consultant; the AI coach

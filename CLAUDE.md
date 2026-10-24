@@ -37,12 +37,11 @@ parallel to the engineers pack — see
 meter is never shown live; a brief's numbers are frozen like a
 material's.
 
-**The current build order is decided** — see
-`docs/decisions/2026-10-22-genre-skins-sequencing.md` §8:
-(1) the kid places ants (authorship — the game begins when the kid
-builds the bridge, not tests ours); (2) the procedural strain language
-plus the skin manifest, with the same-archetype skin toggle;
-(3) the import portal. Don't reorder without a new decision file.
+**The build order so far:** the 2026-10-22 §8 sequence (placement →
+strain language and skins → the import portal) is complete, and band
+predictions — measure mode — followed it, built per
+`docs/decisions/2026-10-24-band-predictions.md`. The next step is not
+decided; it takes a new decision file, as always.
 
 ## 3. Hard rules that bind code
 

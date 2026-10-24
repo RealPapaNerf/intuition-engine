@@ -46,6 +46,7 @@ import {
   makeJournal,
   record,
   calibration,
+  makeLadder,
   STRAIN,
 } from '../engine/index.js';
 import { SKINS } from '../skins/index.js';
@@ -81,6 +82,10 @@ const BANNER_FRAMES = 160; // how long "the costume changed" stays up
 const GRAB = 0.032; // m: how close to a dot counts as on it
 const TAP = 0.022; // m: how close to a link counts as tapping it
 const FINGER = 18; // px on screen: neither may shrink below a fingertip
+const SCALE = LEVEL.measure; // the archetype's frozen instrument
+const SCALE_G = Math.round(SCALE.max * 1000);
+const RES_G = Math.round(SCALE.resolution * 1000);
+const MEASURE_BUDGET_MS = 10; // the scale's thinking time per frame
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -90,8 +95,10 @@ const world = (p) => ({ x: p[0] * LEVEL.step, y: p[1] * LEVEL.step });
 let frogIndex = 1;
 let design = makeBlueprint();
 const history = []; // undo: earlier link lists
-let phase; // 'build' | 'testing' | 'result' | 'shedding'
+let phase; // 'build' | 'measuring' | 'testing' | 'result' | 'shedding'
+let mode = 'feel'; // 'feel': holds/breaks · 'measure': a band in grams
 let prediction = null; // 'holds' | 'breaks'
+let measure = null; // the live measure round: ladder, band, probe, reading
 let run = null; // the live test: model, crossing, snap, shed
 let drag = null; // laying links: { at, placed, before }
 let tap = null; // a tap that may send a link home: { link, x, y }
@@ -175,6 +182,7 @@ try {
   const prefs = JSON.parse(localStorage.getItem('willitbreak-view')) ?? {};
   skin = costumes.find((s) => s.id === prefs.skin) ?? skin;
   numbers = prefs.numbers === true;
+  mode = prefs.mode === 'measure' ? 'measure' : 'feel';
 } catch {
   /* start empty, in the first costume */
 }
@@ -186,7 +194,7 @@ function save(key, value) {
   }
 }
 const saveDesign = () => save('willitbreak-design', design);
-const saveView = () => save('willitbreak-view', { skin: skin.id, numbers });
+const saveView = () => save('willitbreak-view', { skin: skin.id, numbers, mode });
 
 // A prediction is only a prediction if the kid hasn't seen that exact
 // bridge carry that exact cargo — in any costume. Seen setups come back
@@ -199,8 +207,11 @@ function hash(s) {
   }
   return h >>> 0;
 }
+// Measure-mode setups are keyed apart from feel-mode ones: the same
+// bridge is a new commitment when the question changes (decisions
+// 2026-10-24 §4).
 function levelId() {
-  return `${LEVEL.id}:${LEVEL.cargo[frogIndex] * 1000}g`;
+  return mode === 'measure' ? `${LEVEL.id}:measure` : `${LEVEL.id}:${LEVEL.cargo[frogIndex] * 1000}g`;
 }
 function setupKey() {
   const links = design.links.map(([p, q]) => linkKey(p, q)).sort();
@@ -230,16 +241,18 @@ function relabel() {
   $('smaller').textContent = `Smaller ${w().cargo}`;
   $('bigger').textContent = `Bigger ${w().cargo}`;
   $('shed').textContent = `Shed the lazy ${w().links}`;
-  $('cargoWord').textContent = cap(w().cargo);
+  $('cargoWord').textContent = mode === 'measure' ? 'Scale' : cap(w().cargo);
   $('linksWord').textContent = cap(w().links);
   $('jarWord').textContent = w().jar;
   $('linkWord').textContent = w().link;
-  $('frog').textContent = cargoName();
+  $('frog').textContent = mode === 'measure' ? `reads to ${SCALE_G} g` : cargoName();
   writeCredits($('credit'), skin);
   for (const b of document.querySelectorAll('[data-skin]')) {
     b.setAttribute('aria-pressed', String(b.dataset.skin === skin.id));
   }
   $('numbers').setAttribute('aria-pressed', String(numbers));
+  $('feel').setAttribute('aria-pressed', String(mode === 'feel'));
+  $('measure').setAttribute('aria-pressed', String(mode === 'measure'));
   $('msg').textContent = message();
 }
 
@@ -383,32 +396,45 @@ canvas.addEventListener('pointerleave', () => {
 
 function buildPrompt() {
   if (design.links.length === 0) {
-    return `${cargoName()} wants to cross. Drag from the ${w().bank} to lay a line of ${w().links} — reach the other side!`;
+    return mode === 'measure'
+      ? `Build a bridge to weigh: drag from the ${w().bank} to lay a line of ${w().links} — reach the other side!`
+      : `${cargoName()} wants to cross. Drag from the ${w().bank} to lay a line of ${w().links} — reach the other side!`;
   }
   if (!findRoute(LEVEL, design)) {
     return `Keep going — the ${w().cargo} needs ${w().links} all the way to the other ${w().bank}.`;
   }
   if (seen.has(setupKey())) {
-    return `You have seen this bridge carry this ${w().cargo}. Change the bridge or the ${w().cargo} to make a new call.`;
+    return mode === 'measure'
+      ? `You have weighed this bridge. Change it to make a new call.`
+      : `You have seen this bridge carry this ${w().cargo}. Change the bridge or the ${w().cargo} to make a new call.`;
   }
-  return `${cargoName()} wants to cross. Will your bridge hold? Say it before you see it.`;
+  return mode === 'measure'
+    ? `How many grams can your bridge carry across? Set your band — say it before the scale says it.`
+    : `${cargoName()} wants to cross. Will your bridge hold? Say it before you see it.`;
 }
 
 // Buttons follow the phase; the message is whatever just happened (as
 // words to say in any skin), or the build prompt.
 function refresh(words = null) {
   const building = phase === 'build';
+  const measuring = mode === 'measure';
   const callable = building && findRoute(LEVEL, design) !== null && !seen.has(setupKey());
-  const frogs = building || phase === 'result';
+  const frogs = !measuring && (building || phase === 'result');
   $('smaller').disabled = !frogs || frogIndex === 0;
   $('bigger').disabled = !frogs || frogIndex === LEVEL.cargo.length - 1;
   $('undo').disabled = !building || history.length === 0;
   $('clear').disabled = !building || design.links.length === 0;
+  $('holds').style.display = measuring ? 'none' : '';
+  $('breaks').style.display = measuring ? 'none' : '';
+  $('bandbox').style.display = measuring ? '' : 'none';
   $('holds').disabled = !callable;
   $('breaks').disabled = !callable;
-  $('shed').disabled = !(phase === 'result' && run.crossing.outcome === 'holds' && !run.shed);
+  $('lockband').disabled = !callable;
+  // The shed stays a feel-mode move: its load cases are the frog ladder's
+  // fixed cargo, not the scale's reading.
+  $('shed').disabled = !(phase === 'result' && !measuring && run && run.crossing.outcome === 'holds' && !run.shed);
   $('build').disabled = phase !== 'result';
-  $('frog').textContent = cargoName();
+  $('frog').textContent = measuring ? `reads to ${SCALE_G} g` : cargoName();
   if (words !== null) say(words);
   else if (building) say(buildPrompt);
 }
@@ -416,12 +442,12 @@ function refresh(words = null) {
 function toBuild(words = null) {
   phase = 'build';
   run = null;
+  measure = null;
   debris.length = 0;
   refresh(words);
 }
 
-function predict(call) {
-  prediction = call;
+function startRun(cargoMass) {
   const built = buildModel(LEVEL, design);
   const route = findRoute(LEVEL, design);
   const seedOf = new Map();
@@ -432,7 +458,7 @@ function predict(call) {
     seedOf, // each link moves as itself, in build mode and test alike
     crossing: makeCrossing(built.model, {
       route: route.map((p) => built.nodeOf.get(pointKey(p))),
-      cargoMass: LEVEL.cargo[frogIndex],
+      cargoMass,
       dryY: LEVEL.dryY,
     }),
     snap: null, // the first link to let go, and where
@@ -440,13 +466,100 @@ function predict(call) {
     shed: null,
   };
   phase = 'testing';
+}
+
+function predict(call) {
+  prediction = call;
+  startRun(LEVEL.cargo[frogIndex]);
   refresh(() => `You say it ${call === 'holds' ? 'HOLDS' : 'BREAKS'}. The scaffold comes away…`);
+}
+
+// --- The scale (measure mode; decisions 2026-10-24) ------------------------
+//
+// The kid commits a band in grams; the ladder bisects with full, honest
+// crossings of their bridge, pumped invisibly a time-budget per frame;
+// then the heaviest load that held walks the bridge on stage — the same
+// physics, now as theater — and the verdict reads the scale against the
+// band.
+
+const toGrid = (g, up) => (up ? Math.ceil(g / RES_G) : Math.floor(g / RES_G)) * RES_G;
+
+function lockBand() {
+  const empty = $('lo').value.trim() === '' || $('hi').value.trim() === '';
+  const lo = toGrid(Number($('lo').value), false);
+  const hi = toGrid(Number($('hi').value), true);
+  if (empty || !Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < lo || hi > SCALE_G) {
+    say(() => `The band needs two numbers: 0 to ${SCALE_G} g, low first.`);
+    return;
+  }
+  measure = {
+    ladder: makeLadder(SCALE),
+    band: { lo, hi },
+    probing: null, // the headless crossing under way
+    last: null, // the latest probe, for the narration
+    reading: null,
+  };
+  phase = 'measuring';
+  refresh(() => `Locked in: ${lo}–${hi} g. The scale gets to work — every try is a real crossing…`);
+}
+
+function measureWords() {
+  const p = measure?.last;
+  if (!p) return 'The scale is getting ready…';
+  return `⚖️ ${p.g} g — ${p.holds ? `the ${w().links} held it.` : 'too heavy!'} The scale narrows in…`;
+}
+
+function pumpMeasure() {
+  const start = performance.now();
+  while (performance.now() - start < MEASURE_BUDGET_MS) {
+    if (!measure.probing) {
+      const mass = measure.ladder.next();
+      if (mass === null) {
+        finishLadder();
+        return;
+      }
+      const built = buildModel(LEVEL, design);
+      const route = findRoute(LEVEL, design);
+      measure.probing = {
+        mass,
+        crossing: makeCrossing(built.model, {
+          route: route.map((p) => built.nodeOf.get(pointKey(p))),
+          cargoMass: mass,
+          dryY: LEVEL.dryY,
+        }),
+      };
+    }
+    const c = measure.probing.crossing;
+    advanceCrossing(c);
+    if (c.outcome) {
+      const holds = c.outcome === 'holds';
+      measure.ladder.report(holds);
+      measure.last = { g: Math.round(measure.probing.mass * 1000), holds };
+      measure.probing = null;
+      say(measureWords);
+    }
+  }
+}
+
+function finishLadder() {
+  measure.reading = measure.ladder.result();
+  const { mass, heldAny } = measure.reading;
+  // A zero reading still gets its stage time: the lightest probe snaps
+  // in full view, which is the lesson.
+  startRun(heldAny ? mass : SCALE.resolution);
+  refresh(() => `The scale reads ${Math.round(mass * 1000)} g. Watch it carry that…`);
+}
+
+function runCargoName() {
+  return mode === 'measure' && run
+    ? `the ${Math.round(run.crossing.cargoMass * 1000)} g ${w().cargo}`
+    : cargoName();
 }
 
 function narrate() {
   const c = run.crossing;
   if (c.phase === 'rest') say(() => `The scaffold is off. The ${w().links} hold on…`);
-  if (c.phase === 'walk') say(() => `Here comes ${cargoName()}…`);
+  if (c.phase === 'walk') say(() => `Here comes ${runCargoName()}…`);
 }
 
 // The verdict is kept as facts and said in whatever costume is on, so
@@ -473,7 +586,49 @@ function verdictWords(v) {
   };
 }
 
+// The band verdict is kept as facts and said in whatever costume is on.
+function bandVerdictWords(v) {
+  return () => {
+    const head = v.hit ? '✅ Inside your band!' : '❌ Outside your band.';
+    const read = v.maxed
+      ? `The scale pinned at its stop — ${v.gRead} g and still holding. More than the scale goes!`
+      : v.heldAny
+        ? `The scale reads ${v.gRead} g — the heaviest ${w().cargo} your bridge carried across dry.`
+        : `The scale reads 0 g — it couldn't carry even the lightest ${w().cargo}.`;
+    return `${head} You said ${v.lo}–${v.hi} g. ${read}`;
+  };
+}
+
+function finishMeasureRound() {
+  const { mass, maxed, heldAny } = measure.reading;
+  const gRead = Math.round(mass * 1000);
+  const { lo, hi } = measure.band;
+  const setup = setupKey();
+  record(journal, {
+    level: levelId(),
+    kind: 'band',
+    prediction: { lo, hi },
+    range: SCALE_G, // the scale's span: every band judged on one ruler
+    outcome: gRead,
+    buildFailed: !heldAny,
+    consultant: null,
+    // display metadata; the journal never reads these
+    ants: design.links.length,
+    setup,
+    skin: skin.id,
+    at: Date.now(),
+  });
+  saveJournal();
+  seen.add(setup);
+  phase = 'result';
+  refresh(bandVerdictWords({ hit: gRead >= lo && gRead <= hi, gRead, maxed, heldAny, lo, hi }));
+}
+
 function finishRound() {
+  if (mode === 'measure' && measure?.reading) {
+    finishMeasureRound();
+    return;
+  }
   const c = run.crossing;
   const actual = c.outcome === 'holds' ? 'holds' : 'breaks';
   const setup = setupKey();
@@ -625,6 +780,7 @@ function tick() {
       pumpShed();
     }
   }
+  if (phase === 'measuring') pumpMeasure();
   if (banner > 0) banner--;
   draw();
   requestAnimationFrame(tick);
@@ -685,6 +841,17 @@ function drawTest(t) {
   }
 }
 
+// On the scale, the cargo's picture is the biggest costume cargo at or
+// under the live mass — the picture is costume, the mass is the physics.
+function displayFrogIndex() {
+  if (!(mode === 'measure' && run)) return frogIndex;
+  let i = 0;
+  for (let k = 0; k < LEVEL.cargo.length; k++) {
+    if (LEVEL.cargo[k] <= run.crossing.cargoMass) i = k;
+  }
+  return i;
+}
+
 function cargoAt() {
   let pos = { x: -0.08, y: 0 };
   if (run) {
@@ -703,24 +870,26 @@ function draw() {
   const t = performance.now() / 1000;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawScene(ctx, LEVEL, skin);
-  if (phase === 'build') drawBlueprint(t);
+  if (phase === 'build' || phase === 'measuring') drawBlueprint(t);
   else drawTest(t);
   const pos = cargoAt();
-  drawCargo(ctx, LEVEL, skin, frogIndex, pos);
+  drawCargo(ctx, LEVEL, skin, displayFrogIndex(), pos);
 
   if (numbers) {
     const c = run?.crossing;
     const members = run ? activeMembers(run.model) : [];
     const valueOf = (m) => (c.outcome === 'holds' ? c.peak.get(m) ?? 0 : utilization(m));
-    drawNumbers(ctx, LEVEL, skin, members, valueOf, { index: frogIndex, pos });
+    drawNumbers(ctx, LEVEL, skin, members, valueOf, { index: displayFrogIndex(), pos });
   }
   if (banner > 0) {
     drawCaption(ctx, LEVEL, skin, 'The costume changed. The physics didn’t.', Math.min(1, banner / 30));
+  } else if (phase === 'measuring') {
+    drawCaption(ctx, LEVEL, skin, 'The scale is working — every try is a real crossing');
   } else if (run && run.crossing.outcome === 'holds') {
     drawCaption(ctx, LEVEL, skin, `Colors show how hard each ${w().link} pulled while the ${w().cargo} crossed`);
   }
 
-  if (phase === 'build') {
+  if (phase === 'build' || phase === 'measuring') {
     $('working').textContent = design.links.length;
     $('jar').textContent = antsLeft(LEVEL, design);
     $('maxu').textContent = '—';
@@ -755,8 +924,25 @@ $('clear').onclick = () => {
 };
 $('holds').onclick = () => predict('holds');
 $('breaks').onclick = () => predict('breaks');
+$('lockband').onclick = lockBand;
 $('shed').onclick = startShed;
 $('build').onclick = () => toBuild();
+
+// The mode is part of the commitment: it only changes between rounds,
+// never once a call or a band is locked in.
+function setMode(m) {
+  if (m === mode || (phase !== 'build' && phase !== 'result')) return;
+  mode = m;
+  saveView();
+  relabel();
+  toBuild();
+}
+$('feel').onclick = () => setMode('feel');
+$('measure').onclick = () => setMode('measure');
+for (const id of ['lo', 'hi']) {
+  $(id).step = RES_G;
+  $(id).max = SCALE_G;
+}
 
 const numbersButton = document.createElement('button');
 numbersButton.id = 'numbers';
