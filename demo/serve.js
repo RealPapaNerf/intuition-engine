@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url';
 import { makeCoach } from '../coach/service.js';
 import { makeEducatorLog } from '../coach/educator.js';
 import { makeFixtureLibrary } from '../coach/library.js';
+import { BASES, GRANT_BOUNDS } from '../engine/grants.js';
+import { MATERIALS } from '../engine/materials.js';
 
 const types = {
   '.html': 'text/html',
@@ -128,6 +130,18 @@ async function adults(req, res, url, { coach, educator, library }) {
     if (req.method !== 'GET') return send(res, 405, 'GET only');
     const q = url.searchParams.get('q');
     return sendJson(res, 200, q ? library.search(q, 20) : library.list());
+  }
+  // "What exists in the forest?" — the grant vocabulary and the catalog.
+  // Free, like the library list: world knowledge never costs an ask
+  // (free items §5).
+  if (url.pathname === '/coach/forest') {
+    if (req.method !== 'GET') return send(res, 405, 'GET only');
+    return sendJson(res, 200, {
+      grants: ['cargo', 'links', 'stock', 'anchor', 'fixture'],
+      materials: Object.keys(MATERIALS),
+      bases: Object.keys(BASES),
+      bounds: GRANT_BOUNDS,
+    });
   }
   if (url.pathname === '/educator/log') {
     if (req.method !== 'POST') return send(res, 405, 'POST only');

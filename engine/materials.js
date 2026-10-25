@@ -32,11 +32,24 @@ export const ANT = Object.freeze({
 
 export const WOOD = Object.freeze({
   name: 'wood',
-  axialStiffness: 5000,
+  // Stiff enough to read as wood next to an ant (17× the ant), soft
+  // enough that a placed grid-length stick with its own small mass
+  // integrates stably at the crossing's dt: ω = √(EA/L / (m/2)) must
+  // stay under the stepper's limit. 5000 with light placed nodes blew
+  // past it (ω·dt ≈ 3.6 → explosion); 1000 at 8 g sits near 1.3 with
+  // damping in hand. Fantasy constants, legible scene — and now also
+  // solver-legible.
+  axialStiffness: 1000,
   tensionLimit: 40,
   compressionLimit: 40,
   tensionOnly: false,
   damping: 2.0,
+  // One placed stick's weight. The solver treats a zero-mass node as
+  // immovable, so a massless free body would hang in the sky like a
+  // hook — placed wood and silk must weigh something for "an unheld
+  // object falls" to be true (decisions 2026-10-25, free items §1).
+  // 8 g: heavier than five ants, still holdable by one (1.2 N ≈ 120 g).
+  mass: 0.008, //                                           REVISIT
 });
 
 export const SILK = Object.freeze({
@@ -46,6 +59,7 @@ export const SILK = Object.freeze({
   compressionLimit: 0,
   tensionOnly: true,
   damping: 6.0,
+  mass: 0.0002, // a strand weighs nearly nothing — but it falls  REVISIT
 });
 
 // The catalog: every material a blueprint link or a grant may name.

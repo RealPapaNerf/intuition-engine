@@ -63,6 +63,22 @@ export function checkEntry(e) {
   if (!Array.isArray(roots) || !roots.every((p) => gridPair(p) && endpoints.has(key(p)))) {
     return 'bad-roots';
   }
+  // One object, one connected shape — same rule as the grant gate.
+  const joined = new Set([key(members[0].a)]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const m of members) {
+      const ka = key(m.a);
+      const kb = key(m.b);
+      if (joined.has(ka) !== joined.has(kb)) {
+        joined.add(ka);
+        joined.add(kb);
+        grew = true;
+      }
+    }
+  }
+  if (![...endpoints].every((p) => joined.has(p))) return 'in-pieces';
   return null;
 }
 

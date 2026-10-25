@@ -8,7 +8,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeCoach, COACH_CAPS, COACH_MODEL, FALLBACK_QUESTION } from '../coach/service.js';
+import {
+  makeCoach,
+  budgetFor,
+  COACH_BUDGET,
+  COACH_MODEL,
+  FALLBACK_QUESTION,
+} from '../coach/service.js';
 import { makeFixtureLibrary } from '../coach/library.js';
 
 function claude(script) {
@@ -23,7 +29,7 @@ function claude(script) {
       json: async () => ({
         stop_reason: r.stop ?? 'end_turn',
         content: [{ type: 'text', text: JSON.stringify(r.reply) }],
-        usage: { output_tokens: r.out ?? 50 },
+        usage: { input_tokens: r.inTok ?? 1000, output_tokens: r.out ?? 50 },
       }),
     };
   };
@@ -39,17 +45,19 @@ test('no key, no coach — and no call ever leaves the house', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('a question comes back as asked, with the day’s remaining jar', async () => {
+test('a question comes back as asked, with the bill the kid will see', async () => {
   const { fetchFn, calls } = claude({
     reply: { question: 'Where did it snap first?', grant: null },
   });
   const coach = makeCoach({ apiKey: 'k', fetch: fetchFn });
   const r = await coach.ask(ASK);
+  // 1000 in at 400 ¢/MTok + 50 out at 2000 ¢/MTok = half a cent.
   assert.deepEqual(r, {
     on: true,
     question: 'Where did it snap first?',
     grant: null,
-    left: { calls: COACH_CAPS.calls - 1, outputTokens: COACH_CAPS.outputTokens - 50 },
+    cost: { turn: 0.5, today: 0.5 },
+    left: { calls: budgetFor(0) - 1, cents: 24.5 },
   });
   const { headers, body } = calls[0];
   assert.equal(body.model, COACH_MODEL);
@@ -83,6 +91,7 @@ test('the coach is told only what the kid can see', async () => {
   assert.deepEqual(parsed.state.calibration, { total: 9, hits: 7, streak: 3 });
   assert.equal(parsed.state.mode, 'measure');
   assert.ok(!('adultFlag' in parsed.state));
+  assert.equal(parsed.state.questionsLeft, budgetFor(0) - 1, 'the kid’s budget rides along');
 });
 
 test('a reply that is not a question is replaced, never passed through', async () => {
@@ -147,32 +156,46 @@ test('grants are judged against the grant list, not the client’s level object'
   assert.deepEqual(bad, { on: false, why: 'bad-state' });
 });
 
-test('the day’s jar empties: calls capped, tokens capped, morning refills', async () => {
+test('the budgets empty: questions per problem, cents per day, morning refills', async () => {
   let day = Date.parse('2026-10-25T10:00:00Z');
-  const { fetchFn, calls } = claude({ reply: { question: 'Hm?', grant: null }, out: 40 });
+  const { fetchFn, calls } = claude({ reply: { question: 'Hm?', grant: null } });
   const coach = makeCoach({
     apiKey: 'k',
     fetch: fetchFn,
-    caps: { calls: 2, outputTokens: 1000 },
+    budget: { startCalls: 2, floorCalls: 2, shrinkEvery: 1e9 },
     now: () => day,
   });
   assert.equal((await coach.ask(ASK)).on, true);
   assert.equal((await coach.ask(ASK)).on, true);
   const spent = await coach.ask(ASK);
-  assert.deepEqual([spent.on, spent.why], [false, 'jar-empty']);
-  assert.equal(calls.length, 2, 'a spent jar never calls out');
+  assert.deepEqual([spent.on, spent.why, spent.which], [false, 'jar-empty', 'questions']);
+  assert.equal(calls.length, 2, 'a spent budget never calls out');
 
   day += 24 * 60 * 60 * 1000; // the next morning
   assert.equal((await coach.ask(ASK)).on, true);
 
-  // A reply may finish past the token cap; the next call never starts.
-  const tokens = makeCoach({
+  // The cents guard is its own wall: half a cent a turn, a one-cent day.
+  const cents = makeCoach({
     apiKey: 'k',
-    fetch: claude({ reply: { question: 'Hm?', grant: null }, out: 1100 }).fetchFn,
-    caps: { calls: 10, outputTokens: 1000 },
+    fetch: claude({ reply: { question: 'Hm?', grant: null } }).fetchFn,
+    caps: { dayCents: 1 },
   });
-  assert.equal((await tokens.ask(ASK)).on, true);
-  assert.equal((await tokens.ask(ASK)).why, 'jar-empty', 'tokens cap on their own');
+  assert.equal((await cents.ask(ASK)).on, true);
+  assert.equal((await cents.ask(ASK)).on, true); // today now 1.0 of 1
+  const broke = await cents.ask(ASK);
+  assert.deepEqual([broke.why, broke.which], ['jar-empty', 'cents']);
+});
+
+test('the question budget starts big and shrinks as the library grows', async () => {
+  assert.equal(budgetFor(0), COACH_BUDGET.startCalls);
+  assert.equal(budgetFor(4), COACH_BUDGET.startCalls - 2);
+  assert.equal(budgetFor(10000), COACH_BUDGET.floorCalls, 'never below the floor');
+
+  const shelf = (n) => ({ list: () => new Array(n).fill(0), search: () => [], place: () => null });
+  const { fetchFn } = claude({ reply: { question: 'Hm?', grant: null } });
+  const coach = makeCoach({ apiKey: 'k', fetch: fetchFn, library: shelf(10) });
+  const r = await coach.ask(ASK);
+  assert.equal(r.left.calls, budgetFor(10) - 1, 'a rich library means a tighter budget');
 });
 
 test('an API that errors or vanishes turns the coach off without spending', async () => {
@@ -185,7 +208,7 @@ test('an API that errors or vanishes turns the coach off without spending', asyn
     },
   });
   assert.deepEqual(await gone.ask(ASK), { on: false, why: 'unreachable' });
-  assert.deepEqual(await gone.left('Pia'), COACH_CAPS, 'nothing was spent');
+  assert.deepEqual(gone.left('Pia'), { calls: budgetFor(0), cents: 25 }, 'nothing was spent');
 });
 
 test('the library rides the ask, a pick is resolved, a fresh build is saved', async () => {
@@ -251,20 +274,25 @@ test('the library rides the ask, a pick is resolved, a fresh build is saved', as
     assert.deepEqual(names.sort(), ['Bent tree', 'River piling']);
     assert.equal(library.list().find((e) => e.name === 'Bent tree').author, 'Pia');
 
-    // A floating build is dropped and never saved.
-    const floating = claude({
+    // A grant of scattered pieces is dropped and never saved — one
+    // object per ask. (A floating one-piece branch is fine now: the
+    // solver, not the gate, decides whether it stays up.)
+    const pieces = claude({
       reply: {
-        question: 'A cloud?',
+        question: 'Two bits?',
         grant: {
           kind: 'fixture',
-          name: 'Sky plank',
+          name: 'Bag of bits',
           tags: [],
-          members: [{ a: [5, 2], b: [6, 2], mat: 'wood' }],
+          members: [
+            { a: [5, 2], b: [6, 2], mat: 'wood' },
+            { a: [8, 2], b: [9, 2], mat: 'wood' },
+          ],
           roots: [],
         },
       },
     });
-    const no = await makeCoach({ apiKey: 'k', fetch: floating.fetchFn, library }).ask(ASK);
+    const no = await makeCoach({ apiKey: 'k', fetch: pieces.fetchFn, library }).ask(ASK);
     assert.equal(no.grant, null);
     assert.equal(library.list().length, 2);
   } finally {

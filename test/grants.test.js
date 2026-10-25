@@ -29,6 +29,9 @@ import {
   runCrossing,
   breakingLoad,
   deepFreeze,
+  step,
+  settle,
+  checkBreaks,
 } from '../engine/index.js';
 
 const g = 9.81;
@@ -154,7 +157,7 @@ test('stock links spend the stock, ant links spend the jar, one link per pair', 
   const wood = memberOf.get('0,0|1,0');
   const ant = memberOf.get('1,0|2,0');
   assert.equal(wood.material.name, 'wood');
-  assert.equal(wood.mass, 0, 'the catalog gives wood no creature mass yet');
+  assert.equal(wood.mass, WOOD.mass, 'placed wood weighs its catalog mass — free bodies must fall');
   assert.equal(ant.material, L.material);
   assert.equal(ant.mass, ANT.mass);
 });
@@ -192,17 +195,25 @@ test('a fixture the world cannot hold is refused, with the reason', () => {
     fx({ members: [{ a: [5, 9], b: [5, 8], mat: 'wood' }], roots: [] }),
     'out-of-bounds',
   );
-  // Real ground only: a root on neither the bed row nor an anchor.
+  // Planting is an ask, and roots go into real ground: neither the bed
+  // row nor an anchor refuses.
   assert.equal(
     fx({ members: [{ a: [5, -1], b: [5, 0], mat: 'wood' }], roots: [[5, -1]] }),
     'not-ground',
   );
-  // Nothing floats: no roots, no anchor touch.
+  // A root must be a point of the fixture itself.
   assert.equal(
-    fx({ members: [{ a: [5, 0], b: [6, 0], mat: 'wood' }], roots: [] }),
-    'floating',
+    fx({ members: [{ a: [5, -3], b: [5, -2], mat: 'wood' }], roots: [[6, -3]] }),
+    'bad-roots',
   );
-  // ...and a piece a root cannot reach floats too.
+  // An object needn't touch the ground (free items §1): whether an
+  // untied branch stays up is the solver's verdict, not this gate's.
+  assert.equal(
+    fx({ members: [{ a: [5, 1], b: [6, 1], mat: 'wood' }], roots: [] }),
+    null,
+    'a loose branch in the air is a valid grant',
+  );
+  // But one grant is one object: scattered pieces are separate asks.
   assert.equal(
     fx({
       members: [
@@ -211,18 +222,7 @@ test('a fixture the world cannot hold is refused, with the reason', () => {
       ],
       roots: [[5, -3]],
     }),
-    'floating',
-  );
-  // A root must be a point of the fixture itself.
-  assert.equal(
-    fx({ members: [{ a: [5, -3], b: [5, -2], mat: 'wood' }], roots: [[6, -3]] }),
-    'bad-roots',
-  );
-  // Leaning on the bank is ground enough: both ends on anchor columns.
-  assert.equal(
-    fx({ members: [{ a: [0, 1], b: [1, 0], mat: 'wood' }], roots: [] }),
-    null,
-    'a branch leaning off the bank holds',
+    'in-pieces',
   );
 });
 
@@ -308,13 +308,14 @@ const MINI = deepFreeze({
   measure: { quantity: 'breaking-load', max: 0.6, resolution: 0.005 },
 });
 
-// W = 2·Tmax·sinθ for the silk V; silk is massless in the catalog, so
-// the hand number carries no creature-weight term.
+// W = 2·Tmax·sinθ for the silk V, less the apex's own lumped weight
+// (half of each silk arm — the same creature-mass term the ant V test
+// carries).
 const SILK_V_CRITICAL = (() => {
   const Tmax = SILK.tensionLimit;
   const span = Math.hypot(0.1, 0.1) * (1 + Tmax / SILK.axialStiffness);
   const sinTheta = Math.sqrt(span * span - 0.01) / span;
-  return (2 * Tmax * sinTheta) / g;
+  return (2 * Tmax * sinTheta) / g - SILK.mass;
 })();
 
 function measuredOn(level, bp) {
@@ -343,6 +344,64 @@ test('a granted silk V bridge breaks where the silk hand calculation says', () =
     Math.abs(mass - SILK_V_CRITICAL) <= L.measure.resolution,
     `measured ${mass} kg vs analytic ${SILK_V_CRITICAL} kg`,
   );
+});
+
+// --- The items are free, the physics is not (free items §1) ---------------
+
+test('an untied branch falls when gravity arrives', () => {
+  const L = applyGrant(MINI, {
+    kind: 'fixture',
+    name: 'Loose branch',
+    members: [
+      { a: [0, 1], b: [1, 1], mat: 'wood' },
+      { a: [1, 1], b: [2, 1], mat: 'wood' },
+    ],
+    roots: [],
+  });
+  const { model, nodeOf } = buildModel(L, makeBlueprint());
+  const mid = nodeOf.get('1,1');
+  const y0 = mid.y;
+  for (let k = 0; k < 5000; k++) step(model, 0.0008); // four seconds
+  assert.ok(mid.y < y0 - 0.5, `only fell ${(y0 - mid.y).toFixed(3)} m`);
+});
+
+test('the same branch resting its ends on the banks carries the frog', () => {
+  const L = applyGrant(MINI, {
+    kind: 'fixture',
+    name: 'Arch branch',
+    members: [
+      { a: [0, 0], b: [1, 1], mat: 'wood' },
+      { a: [1, 1], b: [2, 0], mat: 'wood' },
+    ],
+    roots: [],
+  });
+  const route = findRoute(L, makeBlueprint());
+  const { model, nodeOf } = buildModel(L, makeBlueprint());
+  const c = runCrossing(model, {
+    route: route.map((p) => nodeOf.get(pointKey(p))),
+    cargoMass: 0.05,
+    dryY: L.dryY,
+  });
+  assert.equal(c.outcome, 'holds', 'wood takes the squish');
+});
+
+test('a floating post held up by ants is a solution: the ants carry it', () => {
+  const L = applyGrant(MINI, {
+    kind: 'fixture',
+    name: 'Loose post',
+    members: [{ a: [1, 0], b: [1, -1], mat: 'wood' }],
+    roots: [],
+  });
+  const bp = makeBlueprint();
+  assert.equal(addLink(L, bp, [0, 0], [1, 0]), null, 'an ant from the bank to the post top');
+  assert.equal(addLink(L, bp, [2, 0], [1, 0]), null, 'and one from the other bank');
+  const { model, nodeOf } = buildModel(L, bp);
+  const bottom = nodeOf.get('1,-1');
+  const y0 = bottom.y;
+  const r = settle(model, { maxSteps: 60000, dt: 0.0008 });
+  assert.ok(r.settled, 'the held post comes to rest');
+  assert.ok(Math.abs(bottom.y - y0) < 0.05, `the post sagged ${(y0 - bottom.y).toFixed(3)} m`);
+  assert.deepEqual(checkBreaks(model), [], 'nothing snapped holding it');
 });
 
 test('the same silk V as a granted fixture measures onto the same hand number', () => {

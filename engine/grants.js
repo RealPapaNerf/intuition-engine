@@ -47,9 +47,13 @@ const key = (p) => `${p[0]},${p[1]}`;
 const gridPair = (p) =>
   Array.isArray(p) && p.length === 2 && Number.isInteger(p[0]) && Number.isInteger(p[1]);
 
-// A fixture (decisions 2026-10-25, the fixture library §1): a named,
-// composed world object — grid-adjacent members of catalog materials,
-// rooted in real ground. Why it can't be granted, or null if it can.
+// A fixture (decisions 2026-10-25, the fixture library §1 as amended by
+// free items §1): a named, composed OBJECT — one connected shape of
+// grid-adjacent members in catalog materials. It does not have to reach
+// the ground: support is physics' job (rest it on a bank, tie it with
+// ants, or it falls). Roots exist only when the kid asked for something
+// planted, and a root must be driven into real ground. Why it can't be
+// granted, or null if it can.
 export function validateFixture(level, fx) {
   if (!fx || typeof fx !== 'object') return 'not-a-fixture';
   if (!goodName(fx.name)) return 'bad-name';
@@ -78,35 +82,31 @@ export function validateFixture(level, fx) {
     taken.add(k);
     endpoints.add(key(m.a)).add(key(m.b));
   }
-  // Real ground only: a root sits on the bed row or an existing anchor,
-  // and is a point of the fixture itself.
+  // Roots are planting, and planting is an ask: optional, each a point
+  // of the fixture itself, driven into real ground (the bed row or an
+  // existing anchor). Whether an UNrooted fixture stays up is never
+  // checked here — the solver answers that when the scaffold comes away.
   if (!Array.isArray(roots)) return 'bad-roots';
-  const held = new Set();
   for (const p of roots) {
     if (!gridPair(p) || !endpoints.has(key(p))) return 'bad-roots';
     if (p[1] !== level.bounds.jMin && !isAnchor(level, p)) return 'not-ground';
-    held.add(key(p));
   }
-  for (const p of [...endpoints]) {
-    const [i, j] = p.split(',').map(Number);
-    if (isAnchor(level, [i, j])) held.add(p);
-  }
-  if (held.size === 0) return 'floating';
-  // Nothing floats: every member traces to a root or an anchor.
+  // One object, one connected shape: scattered pieces are separate asks.
+  const joined = new Set([key(members[0].a)]);
   let grew = true;
   while (grew) {
     grew = false;
     for (const m of members) {
       const ka = key(m.a);
       const kb = key(m.b);
-      if (held.has(ka) !== held.has(kb)) {
-        held.add(ka);
-        held.add(kb);
+      if (joined.has(ka) !== joined.has(kb)) {
+        joined.add(ka);
+        joined.add(kb);
         grew = true;
       }
     }
   }
-  if (![...endpoints].every((p) => held.has(p))) return 'floating';
+  if (![...endpoints].every((p) => joined.has(p))) return 'in-pieces';
   return null;
 }
 

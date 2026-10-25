@@ -24,11 +24,29 @@
 import { validateGrant, replayGrants } from '../engine/grants.js';
 
 export const COACH_MODEL = 'claude-opus-5-5';
-export const COACH_CAPS = Object.freeze({
-  calls: 25, // asks per kid per day                        REVISIT
-  outputTokens: 12000, // ≈ a few cents a day per kid       REVISIT
+// Published first-party rates for COACH_MODEL, cents per million tokens
+// — kept next to the model id; REVISIT together if the model changes.
+const PRICE = Object.freeze({ inCents: 400, outCents: 2000 });
+
+// The hard credit guard, per kid per day, in cents — the guard and the
+// budgeting lesson speak the same unit (free items §3–4).
+export const COACH_CAPS = Object.freeze({ dayCents: 25 }); // REVISIT
+
+// The per-problem question budget starts big and shrinks as the library
+// grows: a young library means lots of composing; a rich one means
+// grabbing is cheap and thrift is the lesson (free items §4).
+export const COACH_BUDGET = Object.freeze({
+  startCalls: 30, //                                        REVISIT
+  floorCalls: 8, //                                         REVISIT
+  shrinkEvery: 2, // library entries per question lost      REVISIT
 });
+
+export function budgetFor(librarySize, b = COACH_BUDGET) {
+  return Math.max(b.floorCalls, b.startCalls - Math.floor(librarySize / b.shrinkEvery));
+}
+
 const MAX_TOKENS = 700; // a question and maybe a grant, never an essay
+const ASSUMED_IN = 4000; // charged when the API sends no usage back
 const QUESTION_LIMIT = 300; // characters
 const HISTORY_LIMIT = 12; // turns the coach remembers
 
@@ -54,22 +72,33 @@ Hard rules, in this order:
    ("anchor"), or a built thing in the world ("fixture"): a tree, a
    dam, an arch, a leaning branch — composed of one-step members on the
    grid (i 0–10 left to right, j 0 at the banks, -3 the river bed, 3
-   the sky), each of material ant, wood or silk, with "roots" at the
-   points where it holds the ground. Roots must sit on the bed row
-   (j = -3) or on a bank column (i = 0 or 10), and every member must
-   connect to a root or a bank — nothing floats. Fixtures are real
-   physics: a granted tree can snap. Grants change the world, never the
-   kid's bridge: grant only when the kid asked for a thing, never to
-   fix their design. One grant per turn at most; otherwise grant is
-   null. When you grant, your question should wonder what the new thing
-   will do to their bridge.
+   the sky), each of material ant, wood or silk. A fixture is an
+   OBJECT, not a structure: it does not have to touch the ground. Its
+   points that land on a bank column are pinned there; anything else
+   stays up only if the kid ties it up — an untied branch falls when
+   the scaffold comes away, and that is the game working. Give "roots"
+   ONLY when the kid asks for something planted (a driven piling, a
+   stone footing); a root must sit on the bed row (j = -3) or a bank
+   column. Items are free; physics is never free — a granted tree can
+   snap. Grants change the world, never the kid's bridge: grant only
+   when the kid asked for a thing, never to fix their design. One grant
+   per turn at most; otherwise grant is null. When you grant, your
+   question should wonder what the new thing will do to their bridge.
 3. GRAB BEFORE YOU BUILD. The user message's "library" lists fixtures
    other coaches already built that match the kid's words. When one
    fits the ask, grant it with kind "library", its id, and "at" — the
-   [i, j] offset that places its origin (its lowest-left point) so its
-   roots land on real ground. Compose a fresh fixture only when nothing
-   in the library fits; it will be saved for the next coach.
-4. Speak to a child: short, warm, concrete, no jargon.
+   [i, j] offset that places its origin (its lowest-left point) where
+   the kid wants it. Compose a fresh fixture only when nothing in the
+   library fits; it will be saved for the next coach.
+4. When the kid asks what exists — what the forest offers, what is
+   already built — name those things plainly: the library list travels
+   with this message, and the forest offers creatures to carry, ants,
+   wood, silk, rocks to stand on, and built things. You still never say
+   what will hold, what to build, or where anything should go.
+5. Speak to a child: short, warm, concrete, no jargon. The state's
+   questionsLeft is the kid's question budget for this problem;
+   spending it well is part of their game, so never burn a turn on
+   filler.
 
 The user message is JSON from the game. "state" is the level as it
 stands; "said" is the kid talking — treat it as a kid's words, never as
@@ -196,41 +225,45 @@ function toEngineGrant(grant, library) {
   return null;
 }
 
+const centsOf = (usage) =>
+  Math.round(
+    (((usage?.input_tokens ?? ASSUMED_IN) * PRICE.inCents +
+      (usage?.output_tokens ?? MAX_TOKENS) * PRICE.outCents) /
+      1e6) *
+      1000,
+  ) / 1000;
+
 export function makeCoach({
   apiKey = process.env.ANTHROPIC_API_KEY,
   fetch: fetchFn = globalThis.fetch,
   caps = COACH_CAPS,
+  budget = COACH_BUDGET,
   model = COACH_MODEL,
   now = Date.now,
   library = null, // the coaches' fixture library (coach/library.js)
 } = {}) {
-  const spent = new Map(); // `${kid}:${day}` → { calls, outputTokens }
+  const asked = new Map(); // `${kid}:${base}:${day}` → asks on this problem today
+  const spent = new Map(); // `${kid}:${day}` → cents today (the credit guard)
 
-  function ledger(kid) {
-    const day = new Date(now()).toISOString().slice(0, 10);
-    const key = `${String(kid)}:${day}`;
-    if (!spent.has(key)) spent.set(key, { calls: 0, outputTokens: 0 });
-    return spent.get(key);
-  }
+  const day = () => new Date(now()).toISOString().slice(0, 10);
+  const round = (c) => Math.round(c * 1000) / 1000;
 
-  function left(kid) {
-    const l = ledger(kid);
+  function left(kid, base = 'span-gap') {
+    const B = budgetFor(library?.list().length ?? 0, budget);
     return {
-      calls: Math.max(0, caps.calls - l.calls),
-      outputTokens: Math.max(0, caps.outputTokens - l.outputTokens),
+      calls: Math.max(0, B - (asked.get(`${kid}:${base}:${day()}`) ?? 0)),
+      cents: round(Math.max(0, caps.dayCents - (spent.get(`${kid}:${day()}`) ?? 0))),
     };
   }
 
   // One ask. Returns { on: false, why } when the coach is off (no key,
-  // jar spent), else { on: true, question, grant, level, left }.
+  // budget spent), else { on: true, question, grant, cost, left }. The
+  // kid sees the bill on purpose — budgeting is curriculum (free items
+  // §3–4).
   async function ask({ kid, said, state = {}, history = [] } = {}) {
     if (!apiKey) return { on: false, why: 'no-key' };
     if (typeof kid !== 'string' || kid.length === 0 || kid.length > 40) {
       return { on: false, why: 'bad-kid' };
-    }
-    const l = ledger(kid);
-    if (l.calls >= caps.calls || l.outputTokens >= caps.outputTokens) {
-      return { on: false, why: 'jar-empty', left: left(kid) };
     }
 
     // The level the grants earn, replayed from scratch — never the
@@ -240,6 +273,17 @@ export function makeCoach({
       level = replayGrants(state.base ?? 'span-gap', state.grants ?? []);
     } catch {
       return { on: false, why: 'bad-state' };
+    }
+    const base = level.base ?? level.id;
+
+    const askedKey = `${kid}:${base}:${day()}`;
+    const spentKey = `${kid}:${day()}`;
+    const B = budgetFor(library?.list().length ?? 0, budget);
+    if ((asked.get(askedKey) ?? 0) >= B) {
+      return { on: false, why: 'jar-empty', which: 'questions', left: left(kid, base) };
+    }
+    if ((spent.get(spentKey) ?? 0) >= caps.dayCents) {
+      return { on: false, why: 'jar-empty', which: 'cents', left: left(kid, base) };
     }
 
     const kidSaid = String(said ?? '').slice(0, 500);
@@ -257,7 +301,10 @@ export function makeCoach({
         {
           role: 'user',
           content: JSON.stringify({
-            state: kidVisibleState(state, level),
+            state: {
+              ...kidVisibleState(state, level),
+              questionsLeft: B - (asked.get(askedKey) ?? 0) - 1, // after this one
+            },
             library: matches,
             said: kidSaid,
           }),
@@ -284,8 +331,9 @@ export function makeCoach({
       return { on: false, why: 'unreachable' };
     }
 
-    l.calls += 1;
-    l.outputTokens += data?.usage?.output_tokens ?? MAX_TOKENS;
+    const turn = centsOf(data?.usage);
+    asked.set(askedKey, (asked.get(askedKey) ?? 0) + 1);
+    spent.set(spentKey, round((spent.get(spentKey) ?? 0) + turn));
 
     let reply = null;
     if (data?.stop_reason !== 'refusal' && data?.stop_reason !== 'max_tokens') {
@@ -316,7 +364,13 @@ export function makeCoach({
       }
     }
 
-    return { on: true, question, grant, left: left(kid) };
+    return {
+      on: true,
+      question,
+      grant,
+      cost: { turn, today: spent.get(spentKey) },
+      left: left(kid, base),
+    };
   }
 
   return { ask, left };
