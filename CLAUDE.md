@@ -38,10 +38,12 @@ meter is never shown live; a brief's numbers are frozen like a
 material's.
 
 **The build order so far:** the 2026-10-22 §8 sequence (placement →
-strain language and skins → the import portal) is complete, and band
-predictions — measure mode — followed it, built per
-`docs/decisions/2026-10-24-band-predictions.md`. The next step is not
-decided; it takes a new decision file, as always.
+strain language and skins → the import portal) is complete; band
+predictions — measure mode — followed (2026-10-24); and the coach step
+is decided and its engine/server half built per
+`docs/decisions/2026-10-25-the-coach-arrives.md` — its §7 lists the
+demo-UI work that build sessions take next. After §7, the next step is
+not decided; it takes a new decision file, as always.
 
 ## 3. Hard rules that bind code
 

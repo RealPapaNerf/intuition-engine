@@ -11,9 +11,14 @@
 // budget.
 //
 // Points are [i, j] grid pairs (see archetypes.js); a blueprint is
-// { links: [[p, q], ...] }.
+// { links: [[p, q], ...] }. A link may carry a third element — a
+// material name from the catalog — when the level granted stock of it
+// (decisions 2026-10-25 §2): untagged links are the level's base
+// material, budgeted by the jar; tagged links spend the stock. One link
+// per point pair, whatever it is made of.
 
 import { makeModel, addNode, addMember } from './model.js';
+import { MATERIALS } from './materials.js';
 
 export function pointKey(p) {
   return `${p[0]},${p[1]}`;
@@ -31,7 +36,9 @@ export function linkKey(p, q) {
 }
 
 export function makeBlueprint(links = []) {
-  return { links: links.map(([p, q]) => [[...p], [...q]]) };
+  return {
+    links: links.map(([p, q, mat]) => (mat ? [[...p], [...q], mat] : [[...p], [...q]])),
+  };
 }
 
 export function isAnchor(level, p) {
@@ -51,7 +58,14 @@ export function inBounds(level, p) {
 }
 
 export function antsLeft(level, bp) {
-  return level.jar - bp.links.length;
+  return level.jar - bp.links.filter(([, , mat]) => !mat).length;
+}
+
+// Stock left of a granted material (decisions 2026-10-25 §2). A level
+// with no stock of that name has none to spend.
+export function stockLeft(level, bp, name) {
+  const granted = level.stock?.[name] ?? 0;
+  return granted - bp.links.filter(([, , mat]) => mat === name).length;
 }
 
 export function hasLink(bp, p, q) {
@@ -73,8 +87,9 @@ export function isHeld(level, bp, p) {
 }
 
 // Why this link can't be placed, or null if it can. The reasons are the
-// whole placement rulebook.
-export function checkLink(level, bp, p, q) {
+// whole placement rulebook. `mat` names granted stock; omitted means the
+// level's base material, paid from the jar.
+export function checkLink(level, bp, p, q, mat = null) {
   if (!inBounds(level, p) || !inBounds(level, q)) return 'out-of-bounds';
   const di = Math.abs(p[0] - q[0]);
   const dj = Math.abs(p[1] - q[1]);
@@ -83,13 +98,18 @@ export function checkLink(level, bp, p, q) {
   if (isAnchor(level, p) && isAnchor(level, q)) return 'both-anchored';
   if (hasLink(bp, p, q)) return 'already-placed';
   if (!isHeld(level, bp, p) && !isHeld(level, bp, q)) return 'nothing-to-hold';
-  if (antsLeft(level, bp) <= 0) return 'jar-empty';
+  if (mat !== null) {
+    if (!(mat in MATERIALS) || !(level.stock?.[mat] > 0)) return 'unknown-material';
+    if (stockLeft(level, bp, mat) <= 0) return 'no-stock';
+  } else if (antsLeft(level, bp) <= 0) {
+    return 'jar-empty';
+  }
   return null;
 }
 
-export function addLink(level, bp, p, q) {
-  const reason = checkLink(level, bp, p, q);
-  if (reason === null) bp.links.push([[...p], [...q]]);
+export function addLink(level, bp, p, q, mat = null) {
+  const reason = checkLink(level, bp, p, q, mat);
+  if (reason === null) bp.links.push(mat ? [[...p], [...q], mat] : [[...p], [...q]]);
   return reason;
 }
 
@@ -130,9 +150,10 @@ export function pruneLoose(level, bp) {
   return loose;
 }
 
-// The simulated model, as built: every link an unstressed member of the
-// level's material carrying one creature's mass, anchors fixed, joints
-// with no point mass of their own (the ants are the weight).
+// The simulated model, as built: every link an unstressed member of its
+// material — the level's, or the named stock, resolved only through the
+// catalog — carrying one creature's mass, anchors fixed, joints with no
+// point mass of their own (the ants are the weight).
 export function buildModel(level, bp) {
   const model = makeModel();
   const nodeOf = new Map();
@@ -152,9 +173,10 @@ export function buildModel(level, bp) {
     }
     return nodeOf.get(k);
   };
-  for (const [p, q] of bp.links) {
-    const m = addMember(model, node(p), node(q), level.material);
-    m.mass = level.material.mass ?? 0;
+  for (const [p, q, mat] of bp.links) {
+    const material = mat ? MATERIALS[mat] : level.material;
+    const m = addMember(model, node(p), node(q), material);
+    m.mass = material.mass ?? 0;
     memberOf.set(linkKey(p, q), m);
   }
   return { model, nodeOf, memberOf };

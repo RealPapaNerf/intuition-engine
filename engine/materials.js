@@ -47,3 +47,12 @@ export const SILK = Object.freeze({
   tensionOnly: true,
   damping: 6.0,
 });
+
+// The catalog: every material a blueprint link or a grant may name.
+// Names resolve only through here — nothing at runtime hands the solver
+// a material object of its own (decisions 2026-10-25 §2).
+export const MATERIALS = Object.freeze({
+  ant: ANT,
+  wood: WOOD,
+  silk: SILK,
+});

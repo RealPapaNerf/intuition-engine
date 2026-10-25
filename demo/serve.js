@@ -4,10 +4,17 @@
 // The door keeps its own copy of the allowlist (portal/library.js):
 // fixed upstream paths, files only from the library's own host — after
 // any redirect, too — and a size cap. No dependencies: `npm run demo`.
+//
+// Since 2026-10-25 it is also the coach's door to Claude (coach/service.js
+// — the key stays in ANTHROPIC_API_KEY here, capped per kid per day) and
+// the educator's window (coach/educator.js — the demo posts journal
+// entries, the educator's page reads attempts and adult-only flags).
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeCoach } from '../coach/service.js';
+import { makeEducatorLog } from '../coach/educator.js';
 
 const types = {
   '.html': 'text/html',
@@ -86,9 +93,70 @@ async function polyPizza(req, res, url, fetchFn) {
   return send(res, r.status, body, r.headers.get('content-type') ?? 'application/json');
 }
 
-export function makeHandler({ root, fetch: fetchFn = globalThis.fetch } = {}) {
+const BODY_LIMIT = 64 * 1024;
+
+async function readJson(req) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.byteLength;
+    if (total > BODY_LIMIT) return null;
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+const sendJson = (res, status, value) =>
+  send(res, status, JSON.stringify(value), 'application/json');
+
+// POST /coach/ask · POST /educator/log · GET /educator/kids ·
+// GET /educator/flags[/<kid>] · GET /educator/attempts/<kid>
+async function adults(req, res, url, { coach, educator }) {
+  if (url.pathname === '/coach/ask') {
+    if (req.method !== 'POST') return send(res, 405, 'POST only');
+    const body = await readJson(req);
+    if (!body) return send(res, 400, 'a small JSON body is needed');
+    return sendJson(res, 200, await coach.ask(body));
+  }
+  if (url.pathname === '/educator/log') {
+    if (req.method !== 'POST') return send(res, 405, 'POST only');
+    const body = await readJson(req);
+    if (!body || typeof body.kid !== 'string') return send(res, 400, 'needs { kid, entries }');
+    try {
+      return sendJson(res, 200, educator.log(body.kid, body.entries));
+    } catch (e) {
+      return send(res, 400, e.message);
+    }
+  }
+  if (req.method !== 'GET') return send(res, 405, 'GET only');
+  if (url.pathname === '/educator/kids') return sendJson(res, 200, educator.kids());
+  if (url.pathname === '/educator/flags') return sendJson(res, 200, educator.allFlags());
+  const flagsOf = url.pathname.match(/^\/educator\/flags\/([^/]+)$/);
+  if (flagsOf) return sendJson(res, 200, educator.flags(decodeURIComponent(flagsOf[1])));
+  const attemptsOf = url.pathname.match(/^\/educator\/attempts\/([^/]+)$/);
+  if (attemptsOf) return sendJson(res, 200, educator.attempts(decodeURIComponent(attemptsOf[1])));
+  return send(res, 404, 'not a route');
+}
+
+export function makeHandler({
+  root,
+  fetch: fetchFn = globalThis.fetch,
+  coach = makeCoach({ fetch: fetchFn }),
+  educator = makeEducatorLog({ dir: join(root, 'demo/.educator-log') }),
+} = {}) {
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/coach/') || url.pathname.startsWith('/educator/')) {
+      try {
+        return await adults(req, res, url, { coach, educator });
+      } catch {
+        return send(res, 500, 'that went wrong on the server');
+      }
+    }
     if (url.pathname.startsWith('/library/')) {
       if (req.method !== 'GET') return send(res, 405, 'GET only');
       if (!url.pathname.startsWith('/library/polypizza/')) return send(res, 404, 'not a library route');
@@ -116,5 +184,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   createServer(makeHandler({ root })).listen(8123, () => {
     console.log('Frog bridge demo: http://localhost:8123/demo/index.html');
     console.log('Costume portal:   http://localhost:8123/demo/portal.html');
+    console.log(
+      process.env.ANTHROPIC_API_KEY
+        ? 'The coach is in (ANTHROPIC_API_KEY is set), capped per kid per day.'
+        : 'The coach is out: set ANTHROPIC_API_KEY to let it in. The game plays fine without it.',
+    );
   });
 }
