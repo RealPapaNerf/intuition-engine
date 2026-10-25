@@ -32,9 +32,89 @@ export const GRANT_BOUNDS = Object.freeze({
   anchorsMax: 8, // grid points added across all anchor grants
   cargoMax: 12, // granted creatures
   nameLength: 24,
+  fixturesMax: 6, // composed world objects per level
+  fixtureMembersMax: 40, // members per fixture
+  tagsMax: 8, // library tags per fixture
 });
 
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} '-]*$/u;
+
+const goodName = (name) =>
+  typeof name === 'string' && name.length <= GRANT_BOUNDS.nameLength && NAME.test(name);
+
+const key = (p) => `${p[0]},${p[1]}`;
+
+const gridPair = (p) =>
+  Array.isArray(p) && p.length === 2 && Number.isInteger(p[0]) && Number.isInteger(p[1]);
+
+// A fixture (decisions 2026-10-25, the fixture library §1): a named,
+// composed world object — grid-adjacent members of catalog materials,
+// rooted in real ground. Why it can't be granted, or null if it can.
+export function validateFixture(level, fx) {
+  if (!fx || typeof fx !== 'object') return 'not-a-fixture';
+  if (!goodName(fx.name)) return 'bad-name';
+  if ((level.fixtures?.length ?? 0) >= GRANT_BOUNDS.fixturesMax) return 'fixtures-full';
+  const tags = fx.tags ?? [];
+  if (!Array.isArray(tags) || tags.length > GRANT_BOUNDS.tagsMax || !tags.every(goodName)) {
+    return 'bad-tags';
+  }
+  const { members, roots } = fx;
+  if (!Array.isArray(members) || members.length < 1 || members.length > GRANT_BOUNDS.fixtureMembersMax) {
+    return 'bad-members';
+  }
+  const taken = new Set(
+    (level.fixtures ?? []).flatMap((f) => f.members.map((m) => pairKey(m.a, m.b))),
+  );
+  const endpoints = new Set();
+  for (const m of members) {
+    if (!m || !gridPair(m.a) || !gridPair(m.b)) return 'bad-members';
+    if (!inBounds(level, m.a) || !inBounds(level, m.b)) return 'out-of-bounds';
+    const di = Math.abs(m.a[0] - m.b[0]);
+    const dj = Math.abs(m.a[1] - m.b[1]);
+    if ((di === 0 && dj === 0) || di > 1 || dj > 1) return 'not-one-step';
+    if (!(m.mat in MATERIALS)) return 'unknown-material';
+    const k = pairKey(m.a, m.b);
+    if (taken.has(k)) return 'already-built';
+    taken.add(k);
+    endpoints.add(key(m.a)).add(key(m.b));
+  }
+  // Real ground only: a root sits on the bed row or an existing anchor,
+  // and is a point of the fixture itself.
+  if (!Array.isArray(roots)) return 'bad-roots';
+  const held = new Set();
+  for (const p of roots) {
+    if (!gridPair(p) || !endpoints.has(key(p))) return 'bad-roots';
+    if (p[1] !== level.bounds.jMin && !isAnchor(level, p)) return 'not-ground';
+    held.add(key(p));
+  }
+  for (const p of [...endpoints]) {
+    const [i, j] = p.split(',').map(Number);
+    if (isAnchor(level, [i, j])) held.add(p);
+  }
+  if (held.size === 0) return 'floating';
+  // Nothing floats: every member traces to a root or an anchor.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const m of members) {
+      const ka = key(m.a);
+      const kb = key(m.b);
+      if (held.has(ka) !== held.has(kb)) {
+        held.add(ka);
+        held.add(kb);
+        grew = true;
+      }
+    }
+  }
+  if (![...endpoints].every((p) => held.has(p))) return 'floating';
+  return null;
+}
+
+function pairKey(a, b) {
+  return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
+    ? `${key(a)}|${key(b)}`
+    : `${key(b)}|${key(a)}`;
+}
 
 function grantedAnchors(level) {
   return (level.grants ?? []).reduce(
@@ -75,6 +155,8 @@ export function validateGrant(level, grant) {
       if ((level.stock?.[material] ?? 0) + count > GRANT_BOUNDS.stockMax) return 'stock-full';
       return null;
     }
+    case 'fixture':
+      return validateFixture(level, grant);
     case 'anchor': {
       const { points } = grant;
       if (!Array.isArray(points) || points.length < 1) return 'bad-points';
@@ -128,6 +210,19 @@ export function applyGrant(level, grant) {
     };
   } else if (grant.kind === 'anchor') {
     variant.anchors = [...level.anchors, ...grant.points.map((p) => [...p])];
+  } else if (grant.kind === 'fixture') {
+    variant.fixtures = [
+      ...(level.fixtures ?? []),
+      {
+        name: grant.name,
+        members: grant.members.map((m) => ({ a: [...m.a], b: [...m.b], mat: m.mat })),
+        roots: grant.roots.map((p) => [...p]),
+      },
+    ];
+    const fresh = grant.roots.filter((p) => !isAnchor(level, p));
+    if (fresh.length > 0) {
+      variant.anchors = [...level.anchors, ...fresh.map((p) => [...p])];
+    }
   }
   return deepFreeze(variant);
 }

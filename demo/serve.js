@@ -15,6 +15,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeCoach } from '../coach/service.js';
 import { makeEducatorLog } from '../coach/educator.js';
+import { makeFixtureLibrary } from '../coach/library.js';
 
 const types = {
   '.html': 'text/html',
@@ -113,14 +114,20 @@ async function readJson(req) {
 const sendJson = (res, status, value) =>
   send(res, status, JSON.stringify(value), 'application/json');
 
-// POST /coach/ask · POST /educator/log · GET /educator/kids ·
-// GET /educator/flags[/<kid>] · GET /educator/attempts/<kid>
-async function adults(req, res, url, { coach, educator }) {
+// POST /coach/ask · GET /coach/fixtures[?q=] · POST /educator/log ·
+// GET /educator/kids · GET /educator/flags[/<kid>] ·
+// GET /educator/attempts/<kid>
+async function adults(req, res, url, { coach, educator, library }) {
   if (url.pathname === '/coach/ask') {
     if (req.method !== 'POST') return send(res, 405, 'POST only');
     const body = await readJson(req);
     if (!body) return send(res, 400, 'a small JSON body is needed');
     return sendJson(res, 200, await coach.ask(body));
+  }
+  if (url.pathname === '/coach/fixtures') {
+    if (req.method !== 'GET') return send(res, 405, 'GET only');
+    const q = url.searchParams.get('q');
+    return sendJson(res, 200, q ? library.search(q, 20) : library.list());
   }
   if (url.pathname === '/educator/log') {
     if (req.method !== 'POST') return send(res, 405, 'POST only');
@@ -145,14 +152,15 @@ async function adults(req, res, url, { coach, educator }) {
 export function makeHandler({
   root,
   fetch: fetchFn = globalThis.fetch,
-  coach = makeCoach({ fetch: fetchFn }),
+  library = makeFixtureLibrary({ dir: join(root, 'fixtures') }),
+  coach = makeCoach({ fetch: fetchFn, library }),
   educator = makeEducatorLog({ dir: join(root, 'demo/.educator-log') }),
 } = {}) {
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname.startsWith('/coach/') || url.pathname.startsWith('/educator/')) {
       try {
-        return await adults(req, res, url, { coach, educator });
+        return await adults(req, res, url, { coach, educator, library });
       } catch {
         return send(res, 500, 'that went wrong on the server');
       }

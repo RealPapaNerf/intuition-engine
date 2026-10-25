@@ -3,7 +3,14 @@ export { step, settle, kineticEnergy, checkBreaks } from './solver.js';
 export { shed, shedSteps, makeGoal } from './shed.js';
 export { ANT, WOOD, SILK, MATERIALS } from './materials.js';
 export { SPAN_GAP } from './archetypes.js';
-export { BASES, GRANT_BOUNDS, validateGrant, applyGrant, replayGrants } from './grants.js';
+export {
+  BASES,
+  GRANT_BOUNDS,
+  validateGrant,
+  validateFixture,
+  applyGrant,
+  replayGrants,
+} from './grants.js';
 export { consult, WRONG_RATE } from './consultant.js';
 export { validateSkin, LICENSES, SPRITE_MARGIN, creditParts, creditText, costumeCredits } from './manifest.js';
 export { deepFreeze } from './freeze.js';
@@ -18,6 +25,7 @@ export {
   isJoint,
   isHeld,
   stockLeft,
+  fixtureLinks,
   checkLink,
   addLink,
   removeLink,

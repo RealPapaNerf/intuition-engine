@@ -41,9 +41,11 @@ material's.
 strain language and skins → the import portal) is complete; band
 predictions — measure mode — followed (2026-10-24); and the coach step
 is decided and its engine/server half built per
-`docs/decisions/2026-10-25-the-coach-arrives.md` — its §7 lists the
-demo-UI work that build sessions take next. After §7, the next step is
-not decided; it takes a new decision file, as always.
+`docs/decisions/2026-10-25-the-coach-arrives.md` and
+`docs/decisions/2026-10-25-the-fixture-library.md` (fixtures and the
+coaches' shared library). The first file's §7 plus the second's §4 list
+the demo-UI work that build sessions take next. After those, the next
+step is not decided; it takes a new decision file, as always.
 
 ## 3. Hard rules that bind code
 

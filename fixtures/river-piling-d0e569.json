@@ -1,0 +1,56 @@
+{
+  "id": "river-piling-d0e569",
+  "body": "d0e5690a",
+  "name": "River piling",
+  "tags": [
+    "post",
+    "pile",
+    "tower",
+    "stilt",
+    "wood",
+    "midriver"
+  ],
+  "members": [
+    {
+      "a": [
+        0,
+        0
+      ],
+      "b": [
+        0,
+        1
+      ],
+      "mat": "wood"
+    },
+    {
+      "a": [
+        0,
+        1
+      ],
+      "b": [
+        0,
+        2
+      ],
+      "mat": "wood"
+    },
+    {
+      "a": [
+        0,
+        2
+      ],
+      "b": [
+        0,
+        3
+      ],
+      "mat": "wood"
+    }
+  ],
+  "roots": [
+    [
+      0,
+      0
+    ]
+  ],
+  "author": "seed",
+  "at": "2026-10-25"
+}

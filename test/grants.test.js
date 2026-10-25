@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   SPAN_GAP,
   ANT,
+  WOOD,
   SILK,
   GRANT_BOUNDS,
   validateGrant,
@@ -17,8 +18,11 @@ import {
   makeBlueprint,
   addLink,
   checkLink,
+  isHeld,
   antsLeft,
   stockLeft,
+  looseLinks,
+  fixtureLinks,
   buildModel,
   findRoute,
   pointKey,
@@ -155,6 +159,132 @@ test('stock links spend the stock, ant links spend the jar, one link per pair', 
   assert.equal(ant.mass, ANT.mass);
 });
 
+// --- Fixtures: built things in the world -----------------------------------
+
+const PILING = {
+  kind: 'fixture',
+  name: 'River piling',
+  members: [
+    { a: [5, -3], b: [5, -2], mat: 'wood' },
+    { a: [5, -2], b: [5, -1], mat: 'wood' },
+    { a: [5, -1], b: [5, 0], mat: 'wood' },
+  ],
+  roots: [[5, -3]],
+};
+
+test('a fixture the world cannot hold is refused, with the reason', () => {
+  const L = SPAN_GAP;
+  assert.equal(validateGrant(L, PILING), null);
+  const fx = (over) => validateGrant(L, { ...PILING, ...over });
+
+  assert.equal(fx({ name: '' }), 'bad-name');
+  assert.equal(fx({ tags: ['ok', ''] }), 'bad-tags');
+  assert.equal(fx({ members: [] }), 'bad-members');
+  assert.equal(
+    fx({ members: [{ a: [5, -3], b: [5, -1], mat: 'wood' }], roots: [[5, -3]] }),
+    'not-one-step',
+  );
+  assert.equal(
+    fx({ members: [{ a: [5, -3], b: [5, -2], mat: 'granite' }], roots: [[5, -3]] }),
+    'unknown-material',
+  );
+  assert.equal(
+    fx({ members: [{ a: [5, 9], b: [5, 8], mat: 'wood' }], roots: [] }),
+    'out-of-bounds',
+  );
+  // Real ground only: a root on neither the bed row nor an anchor.
+  assert.equal(
+    fx({ members: [{ a: [5, -1], b: [5, 0], mat: 'wood' }], roots: [[5, -1]] }),
+    'not-ground',
+  );
+  // Nothing floats: no roots, no anchor touch.
+  assert.equal(
+    fx({ members: [{ a: [5, 0], b: [6, 0], mat: 'wood' }], roots: [] }),
+    'floating',
+  );
+  // ...and a piece a root cannot reach floats too.
+  assert.equal(
+    fx({
+      members: [
+        { a: [5, -3], b: [5, -2], mat: 'wood' },
+        { a: [7, 0], b: [8, 0], mat: 'wood' },
+      ],
+      roots: [[5, -3]],
+    }),
+    'floating',
+  );
+  // A root must be a point of the fixture itself.
+  assert.equal(
+    fx({ members: [{ a: [5, -3], b: [5, -2], mat: 'wood' }], roots: [[6, -3]] }),
+    'bad-roots',
+  );
+  // Leaning on the bank is ground enough: both ends on anchor columns.
+  assert.equal(
+    fx({ members: [{ a: [0, 1], b: [1, 0], mat: 'wood' }], roots: [] }),
+    null,
+    'a branch leaning off the bank holds',
+  );
+});
+
+test('fixtures join the world: anchored roots, held joints, walked routes, world members', () => {
+  const L = applyGrant(SPAN_GAP, PILING);
+  assert.equal(L.fixtures.length, 1);
+  assert.ok(L.anchors.some(([i, j]) => i === 5 && j === -3), 'the root became ground');
+  assert.throws(() => {
+    L.fixtures[0].members[0].mat = 'silk';
+  }, TypeError);
+
+  // The same pair can't be built twice, by a second fixture or the kid.
+  assert.equal(validateGrant(L, PILING), 'already-built');
+  const bp = makeBlueprint();
+  assert.equal(checkLink(L, bp, [5, -1], [5, 0]), 'already-placed');
+
+  // Ants can grab the granted piling and hang from it honestly.
+  assert.equal(isHeld(L, bp, [5, 0]), true, 'a fixture joint is something to hold');
+  assert.equal(addLink(L, bp, [5, 0], [6, 0]), null);
+  assert.equal(antsLeft(L, bp), L.jar - 1, 'holding the world still spends the jar');
+  assert.deepEqual(looseLinks(L, bp), [], 'held through the fixture, not loose');
+
+  // A granted footbridge is walked like anything else: route with no
+  // kid links at all, and its members simulate as real catalog wood.
+  const deck = {
+    kind: 'fixture',
+    name: 'Old footbridge',
+    members: Array.from({ length: 10 }, (_, i) => ({ a: [i, 0], b: [i + 1, 0], mat: 'wood' })),
+    roots: [],
+  };
+  const walked = applyGrant(SPAN_GAP, deck);
+  const route = findRoute(walked, makeBlueprint());
+  assert.ok(route, 'the cargo can cross on the world alone');
+  assert.equal(route.length, 11);
+  const { memberOf, worldKeys } = buildModel(walked, makeBlueprint());
+  assert.equal(worldKeys.size, 10, 'world members are marked for the shed to spare');
+  assert.equal(memberOf.get('0,0|1,0').material, WOOD);
+
+  assert.equal(fixtureLinks(SPAN_GAP).length, 0, 'the base archetype has no fixtures');
+});
+
+test('fixtures stop at the cap', () => {
+  let L = SPAN_GAP;
+  for (let k = 0; k < GRANT_BOUNDS.fixturesMax; k++) {
+    L = applyGrant(L, {
+      kind: 'fixture',
+      name: `Piling ${k + 1}`,
+      members: [{ a: [k + 1, -3], b: [k + 1, -2], mat: 'wood' }],
+      roots: [[k + 1, -3]],
+    });
+  }
+  assert.equal(
+    validateGrant(L, {
+      kind: 'fixture',
+      name: 'One too many',
+      members: [{ a: [8, -3], b: [8, -2], mat: 'wood' }],
+      roots: [[8, -3]],
+    }),
+    'fixtures-full',
+  );
+});
+
 // --- The hand calculation, through granted silk ---------------------------
 //
 // The same V rig as test/measure.test.js, built through the blueprint
@@ -163,46 +293,72 @@ test('stock links spend the stock, ant links spend the jar, one link per pair', 
 // the angle sets the critical cargo: W = 2·Tmax·sinθ. Silk is massless
 // in the catalog, so the hand number carries no creature-weight term.
 
-test('a granted silk V bridge breaks where the silk hand calculation says', () => {
-  const mini = deepFreeze({
-    id: 'mini-gap',
-    material: ANT,
-    jar: 10,
-    step: 0.1,
-    bounds: { iMin: 0, iMax: 2, jMin: -1, jMax: 1 },
-    anchors: [[0, 0], [2, 0]],
-    start: [0, 0],
-    end: [2, 0],
-    waterY: -9,
-    dryY: -9,
-    cargo: [0.05],
-    measure: { quantity: 'breaking-load', max: 0.6, resolution: 0.005 },
-  });
-  const L = applyGrant(mini, { kind: 'stock', material: 'silk', count: 2 });
-  const bp = makeBlueprint();
-  assert.equal(addLink(L, bp, [0, 0], [1, -1], 'silk'), null);
-  assert.equal(addLink(L, bp, [1, -1], [2, 0], 'silk'), null);
+const MINI = deepFreeze({
+  id: 'mini-gap',
+  material: ANT,
+  jar: 10,
+  step: 0.1,
+  bounds: { iMin: 0, iMax: 2, jMin: -1, jMax: 1 },
+  anchors: [[0, 0], [2, 0]],
+  start: [0, 0],
+  end: [2, 0],
+  waterY: -9,
+  dryY: -9,
+  cargo: [0.05],
+  measure: { quantity: 'breaking-load', max: 0.6, resolution: 0.005 },
+});
 
+// W = 2·Tmax·sinθ for the silk V; silk is massless in the catalog, so
+// the hand number carries no creature-weight term.
+const SILK_V_CRITICAL = (() => {
   const Tmax = SILK.tensionLimit;
   const span = Math.hypot(0.1, 0.1) * (1 + Tmax / SILK.axialStiffness);
   const sinTheta = Math.sqrt(span * span - 0.01) / span;
-  const critical = (2 * Tmax * sinTheta) / g;
+  return (2 * Tmax * sinTheta) / g;
+})();
 
-  const { mass, maxed } = breakingLoad((cargoMass) => {
-    const route = findRoute(L, bp);
-    const { model, nodeOf } = buildModel(L, bp);
+function measuredOn(level, bp) {
+  return breakingLoad((cargoMass) => {
+    const route = findRoute(level, bp);
+    const { model, nodeOf } = buildModel(level, bp);
     return (
       runCrossing(model, {
         route: route.map((p) => nodeOf.get(pointKey(p))),
         cargoMass,
-        dryY: L.dryY,
+        dryY: level.dryY,
       }).outcome === 'holds'
     );
-  }, L.measure);
+  }, level.measure);
+}
 
+test('a granted silk V bridge breaks where the silk hand calculation says', () => {
+  const L = applyGrant(MINI, { kind: 'stock', material: 'silk', count: 2 });
+  const bp = makeBlueprint();
+  assert.equal(addLink(L, bp, [0, 0], [1, -1], 'silk'), null);
+  assert.equal(addLink(L, bp, [1, -1], [2, 0], 'silk'), null);
+
+  const { mass, maxed } = measuredOn(L, bp);
   assert.equal(maxed, false);
   assert.ok(
-    Math.abs(mass - critical) <= L.measure.resolution,
-    `measured ${mass} kg vs analytic ${critical} kg`,
+    Math.abs(mass - SILK_V_CRITICAL) <= L.measure.resolution,
+    `measured ${mass} kg vs analytic ${SILK_V_CRITICAL} kg`,
+  );
+});
+
+test('the same silk V as a granted fixture measures onto the same hand number', () => {
+  const L = applyGrant(MINI, {
+    kind: 'fixture',
+    name: 'Silk sling',
+    members: [
+      { a: [0, 0], b: [1, -1], mat: 'silk' },
+      { a: [1, -1], b: [2, 0], mat: 'silk' },
+    ],
+    roots: [],
+  });
+  const { mass, maxed } = measuredOn(L, makeBlueprint());
+  assert.equal(maxed, false);
+  assert.ok(
+    Math.abs(mass - SILK_V_CRITICAL) <= L.measure.resolution,
+    `measured ${mass} kg vs analytic ${SILK_V_CRITICAL} kg`,
   );
 });

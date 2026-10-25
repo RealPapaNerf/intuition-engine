@@ -45,6 +45,22 @@ export function isAnchor(level, p) {
   return level.anchors.some((a) => a[0] === p[0] && a[1] === p[1]);
 }
 
+// The world's own built things (granted fixtures, decisions 2026-10-25),
+// as links: part of the model, the route, and what a kid can hold onto —
+// never part of the kid's design or budgets.
+export function fixtureLinks(level) {
+  return (level.fixtures ?? []).flatMap((f) => f.members.map((m) => [m.a, m.b, m.mat]));
+}
+
+function isFixtureJoint(level, p) {
+  return (level.fixtures ?? []).some((f) =>
+    f.members.some(
+      (m) =>
+        (m.a[0] === p[0] && m.a[1] === p[1]) || (m.b[0] === p[0] && m.b[1] === p[1]),
+    ),
+  );
+}
+
 export function inBounds(level, p) {
   const { iMin, iMax, jMin, jMax } = level.bounds;
   return (
@@ -81,9 +97,10 @@ export function isJoint(bp, p) {
   );
 }
 
-// Something to hold onto: an anchor, or a joint already in the bridge.
+// Something to hold onto: an anchor, a joint already in the bridge, or
+// a joint of the world's own structures — ants can grab a granted branch.
 export function isHeld(level, bp, p) {
-  return isAnchor(level, p) || isJoint(bp, p);
+  return isAnchor(level, p) || isJoint(bp, p) || isFixtureJoint(level, p);
 }
 
 // Why this link can't be placed, or null if it can. The reasons are the
@@ -97,6 +114,8 @@ export function checkLink(level, bp, p, q, mat = null) {
   if (di > 1 || dj > 1) return 'too-far'; // an ant reaches one point over
   if (isAnchor(level, p) && isAnchor(level, q)) return 'both-anchored';
   if (hasLink(bp, p, q)) return 'already-placed';
+  const k = linkKey(p, q);
+  if (fixtureLinks(level).some(([a, b]) => linkKey(a, b) === k)) return 'already-placed';
   if (!isHeld(level, bp, p) && !isHeld(level, bp, q)) return 'nothing-to-hold';
   if (mat !== null) {
     if (!(mat in MATERIALS) || !(level.stock?.[mat] > 0)) return 'unknown-material';
@@ -121,10 +140,13 @@ export function removeLink(bp, p, q) {
   return true;
 }
 
-// Links with no path to any anchor. Placing never makes one (checkLink
-// wants a held end), but removing a link can strand a piece.
+// Links with no path to any anchor — or to the world's structures, which
+// hold their own weight (a fixture joint is validated ground-connected).
+// Placing never makes one (checkLink wants a held end), but removing a
+// link can strand a piece.
 export function looseLinks(level, bp) {
   const held = new Set(level.anchors.map(pointKey));
+  for (const [a, b] of fixtureLinks(level)) held.add(pointKey(a)).add(pointKey(b));
   let grew = true;
   while (grew) {
     grew = false;
@@ -173,16 +195,26 @@ export function buildModel(level, bp) {
     }
     return nodeOf.get(k);
   };
+  const worldKeys = new Set();
+  for (const [p, q, mat] of fixtureLinks(level)) {
+    const material = MATERIALS[mat];
+    const m = addMember(model, node(p), node(q), material);
+    m.mass = material.mass ?? 0;
+    const k = linkKey(p, q);
+    memberOf.set(k, m);
+    worldKeys.add(k); // the world's members: never the shed's, never tapped home
+  }
   for (const [p, q, mat] of bp.links) {
     const material = mat ? MATERIALS[mat] : level.material;
     const m = addMember(model, node(p), node(q), material);
     m.mass = material.mass ?? 0;
     memberOf.set(linkKey(p, q), m);
   }
-  return { model, nodeOf, memberOf };
+  return { model, nodeOf, memberOf, worldKeys };
 }
 
-// The cargo's route from level.start to level.end over placed links: the
+// The cargo's route from level.start to level.end over placed links and
+// the world's own fixtures (a granted dam is walked like a bridge): the
 // shortest walk, and of equally short walks the one that stays highest
 // (a frog would rather stay dry), then furthest along. Lengths are kept
 // as exact integers (1000 per straight step, 1414 per diagonal), so two
@@ -200,7 +232,7 @@ export function findRoute(level, bp) {
     const cost = a[0] !== b[0] && a[1] !== b[1] ? 1414 : 1000;
     adj.get(k).push({ to: b, cost });
   };
-  for (const [p, q] of bp.links) {
+  for (const [p, q] of [...fixtureLinks(level), ...bp.links]) {
     link(p, q);
     link(q, p);
   }

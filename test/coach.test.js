@@ -5,7 +5,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { makeCoach, COACH_CAPS, COACH_MODEL, FALLBACK_QUESTION } from '../coach/service.js';
+import { makeFixtureLibrary } from '../coach/library.js';
 
 function claude(script) {
   const calls = [];
@@ -182,6 +186,90 @@ test('an API that errors or vanishes turns the coach off without spending', asyn
   });
   assert.deepEqual(await gone.ask(ASK), { on: false, why: 'unreachable' });
   assert.deepEqual(await gone.left('Pia'), COACH_CAPS, 'nothing was spent');
+});
+
+test('the library rides the ask, a pick is resolved, a fresh build is saved', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'coach-lib-'));
+  try {
+    const library = makeFixtureLibrary({ dir });
+    const piling = library.save({
+      name: 'River piling',
+      tags: ['post', 'pile', 'wood'],
+      members: [
+        { a: [0, 0], b: [0, 1], mat: 'wood' },
+        { a: [0, 1], b: [0, 2], mat: 'wood' },
+      ],
+      roots: [[0, 0]],
+    });
+
+    // Grab before you build: the matches travel with the ask, and the
+    // coach's pick comes back as a concrete, validated fixture.
+    const pick = claude({
+      reply: {
+        question: 'A piling it is — what will lean on it first?',
+        grant: { kind: 'library', id: piling.id, at: [5, -3] },
+      },
+    });
+    const coach = makeCoach({ apiKey: 'k', fetch: pick.fetchFn, library });
+    const r = await coach.ask({ kid: 'Pia', said: 'can I have a post in the river?', state: {} });
+    const sent = JSON.parse(pick.calls[0].body.messages.at(-1).content);
+    assert.deepEqual(sent.library, [{ id: piling.id, name: 'River piling', tags: ['post', 'pile', 'wood'] }]);
+    assert.equal(r.grant.kind, 'fixture');
+    assert.equal(r.grant.name, 'River piling');
+    assert.deepEqual(r.grant.roots, [[5, -3]]);
+
+    // A pick placed in the air is dropped by the same gate as anything.
+    const badPick = claude({
+      reply: { question: 'Here?', grant: { kind: 'library', id: piling.id, at: [5, 1] } },
+    });
+    const dropped = await makeCoach({ apiKey: 'k', fetch: badPick.fetchFn, library }).ask(ASK);
+    assert.equal(dropped.grant, null);
+
+    // A fresh build that passes the gate joins the library for the next coach.
+    const fresh = claude({
+      reply: {
+        question: 'One tree, growing — what does your bridge think of it?',
+        grant: {
+          kind: 'fixture',
+          name: 'Bent tree',
+          tags: ['tree', 'branch'],
+          members: [
+            { a: [3, -3], b: [3, -2], mat: 'wood' },
+            { a: [3, -2], b: [4, -1], mat: 'wood' },
+          ],
+          roots: [[3, -3]],
+        },
+      },
+    });
+    const grew = await makeCoach({ apiKey: 'k', fetch: fresh.fetchFn, library }).ask({
+      kid: 'Pia',
+      said: 'is there a tree?',
+      state: {},
+    });
+    assert.equal(grew.grant.kind, 'fixture');
+    const names = library.list().map((e) => e.name);
+    assert.deepEqual(names.sort(), ['Bent tree', 'River piling']);
+    assert.equal(library.list().find((e) => e.name === 'Bent tree').author, 'Pia');
+
+    // A floating build is dropped and never saved.
+    const floating = claude({
+      reply: {
+        question: 'A cloud?',
+        grant: {
+          kind: 'fixture',
+          name: 'Sky plank',
+          tags: [],
+          members: [{ a: [5, 2], b: [6, 2], mat: 'wood' }],
+          roots: [],
+        },
+      },
+    });
+    const no = await makeCoach({ apiKey: 'k', fetch: floating.fetchFn, library }).ask(ASK);
+    assert.equal(no.grant, null);
+    assert.equal(library.list().length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a kid name is required and bounded', async () => {
