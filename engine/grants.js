@@ -32,7 +32,9 @@ export const GRANT_BOUNDS = Object.freeze({
   anchorsMax: 8, // grid points added across all anchor grants
   cargoMax: 12, // granted creatures
   nameLength: 24,
-  fixturesMax: 6, // composed world objects per level
+  // Crowding the scene is protected play (questions §3): this cap is
+  // solver sanity only, raised as the solver proves itself.
+  fixturesMax: 12, // composed world objects per level
   fixtureMembersMax: 40, // members per fixture
   tagsMax: 8, // library tags per fixture
 });

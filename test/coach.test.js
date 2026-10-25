@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import {
   makeCoach,
   budgetFor,
+  CANNED_QUESTIONS,
   COACH_BUDGET,
   COACH_MODEL,
   FALLBACK_QUESTION,
@@ -57,7 +58,7 @@ test('a question comes back as asked, with the bill the kid will see', async () 
     question: 'Where did it snap first?',
     grant: null,
     cost: { turn: 0.5, today: 0.5 },
-    left: { calls: budgetFor(0) - 1, cents: 24.5 },
+    left: { calls: budgetFor(0) - 1, cents: 99.5 },
   });
   const { headers, body } = calls[0];
   assert.equal(body.model, COACH_MODEL);
@@ -156,34 +157,88 @@ test('grants are judged against the grant list, not the client’s level object'
   assert.deepEqual(bad, { on: false, why: 'bad-state' });
 });
 
-test('the budgets empty: questions per problem, cents per day, morning refills', async () => {
-  let day = Date.parse('2026-10-25T10:00:00Z');
+test('the budget is a meter, not a wall: past it the coach keeps answering', async () => {
   const { fetchFn, calls } = claude({ reply: { question: 'Hm?', grant: null } });
   const coach = makeCoach({
     apiKey: 'k',
     fetch: fetchFn,
     budget: { startCalls: 2, floorCalls: 2, shrinkEvery: 1e9 },
-    now: () => day,
   });
   assert.equal((await coach.ask(ASK)).on, true);
   assert.equal((await coach.ask(ASK)).on, true);
-  const spent = await coach.ask(ASK);
-  assert.deepEqual([spent.on, spent.why, spent.which], [false, 'jar-empty', 'questions']);
-  assert.equal(calls.length, 2, 'a spent budget never calls out');
+  const over = await coach.ask(ASK); // past the meter — still answered
+  assert.equal(over.on, true);
+  assert.equal(over.question, 'Hm?');
+  assert.equal(over.left.calls, 0);
+  assert.equal(calls.length, 3, 'the third ask still calls out');
+  const third = JSON.parse(calls[2].body.messages.at(-1).content).state;
+  assert.equal(third.overBudget, true, 'the coach is told, and shifts posture');
+  assert.equal(third.questionsLeft, 0, 'the meter never goes negative on the kid');
+  assert.equal(JSON.parse(calls[0].body.messages.at(-1).content).state.overBudget, false);
+});
+
+test('the cents guard is the one wall — and behind it, the free deck', async () => {
+  let day = Date.parse('2026-10-25T10:00:00Z');
+  const { fetchFn, calls } = claude({ reply: { question: 'Hm?', grant: null } });
+  const coach = makeCoach({ apiKey: 'k', fetch: fetchFn, caps: { dayCents: 1 }, now: () => day });
+  assert.equal((await coach.ask(ASK)).resting, undefined);
+  assert.equal((await coach.ask(ASK)).on, true); // today now 1.0 of 1
+  const rested = await coach.ask(ASK);
+  assert.equal(calls.length, 2, 'a tripped guard never calls out');
+  assert.equal(rested.on, true, 'the kid still gets a question');
+  assert.equal(rested.resting, true);
+  assert.ok(CANNED_QUESTIONS.includes(rested.question), 'the free deck answers');
+  assert.deepEqual(rested.cost, { turn: 0, today: 1 });
+  assert.equal(rested.grant, null, 'grants wait for morning');
+  const again = await coach.ask(ASK);
+  assert.notEqual(again.question, rested.question, 'the deck rotates, not a broken record');
 
   day += 24 * 60 * 60 * 1000; // the next morning
-  assert.equal((await coach.ask(ASK)).on, true);
+  assert.equal((await coach.ask(ASK)).resting, undefined, 'morning refills the jar');
+  assert.equal(calls.length, 3);
+});
 
-  // The cents guard is its own wall: half a cent a turn, a one-cent day.
-  const cents = makeCoach({
+test('every ask is reported to the educator window, which never blocks one', async () => {
+  const notes = [];
+  const educator = { noteAsk: (kid, info) => notes.push([kid, info.nearGuard, info.resting === true]) };
+  // 1000 in at 400 ¢/MTok + 500 out at 2000 ¢/MTok = 1.4 ¢ a turn.
+  const { fetchFn } = claude({ reply: { question: 'Hm?', grant: null }, out: 500 });
+  const coach = makeCoach({
+    apiKey: 'k',
+    fetch: fetchFn,
+    caps: { dayCents: 2.5, warnAt: 0.8 },
+    educator,
+  });
+  await coach.ask(ASK); // 1.4 of 2.5 — quiet
+  await coach.ask(ASK); // 2.8 — past the 2.0 warning band
+  await coach.ask(ASK); // the wall: resting
+  assert.deepEqual(notes, [
+    ['Pia', false, false],
+    ['Pia', true, false],
+    ['Pia', true, true],
+  ]);
+
+  // A window that throws never costs the kid their question.
+  const broken = {
+    noteAsk: () => {
+      throw new Error('boom');
+    },
+  };
+  const ok = await makeCoach({
     apiKey: 'k',
     fetch: claude({ reply: { question: 'Hm?', grant: null } }).fetchFn,
-    caps: { dayCents: 1 },
-  });
-  assert.equal((await cents.ask(ASK)).on, true);
-  assert.equal((await cents.ask(ASK)).on, true); // today now 1.0 of 1
-  const broke = await cents.ask(ASK);
-  assert.deepEqual([broke.why, broke.which], ['jar-empty', 'cents']);
+    educator: broken,
+  }).ask(ASK);
+  assert.equal(ok.on, true);
+});
+
+test('spoken mode rides the state for the pre-reader', async () => {
+  const { fetchFn, calls } = claude({ reply: { question: 'Up or down?', grant: null } });
+  const coach = makeCoach({ apiKey: 'k', fetch: fetchFn });
+  await coach.ask({ ...ASK, state: { spoken: true } });
+  await coach.ask(ASK);
+  assert.equal(JSON.parse(calls[0].body.messages.at(-1).content).state.spoken, true);
+  assert.equal(JSON.parse(calls[1].body.messages.at(-1).content).state.spoken, false);
 });
 
 test('the question budget starts big and shrinks as the library grows', async () => {
@@ -208,7 +263,7 @@ test('an API that errors or vanishes turns the coach off without spending', asyn
     },
   });
   assert.deepEqual(await gone.ask(ASK), { on: false, why: 'unreachable' });
-  assert.deepEqual(gone.left('Pia'), { calls: budgetFor(0), cents: 25 }, 'nothing was spent');
+  assert.deepEqual(gone.left('Pia'), { calls: budgetFor(0), cents: 100 }, 'nothing was spent');
 });
 
 test('the library rides the ask, a pick is resolved, a fresh build is saved', async () => {
@@ -248,7 +303,7 @@ test('the library rides the ask, a pick is resolved, a fresh build is saved', as
     const dropped = await makeCoach({ apiKey: 'k', fetch: badPick.fetchFn, library }).ask(ASK);
     assert.equal(dropped.grant, null);
 
-    // A fresh build that passes the gate joins the library for the next coach.
+    // A fresh build the coach shares joins the library for the next coach.
     const fresh = claude({
       reply: {
         question: 'One tree, growing — what does your bridge think of it?',
@@ -261,6 +316,7 @@ test('the library rides the ask, a pick is resolved, a fresh build is saved', as
             { a: [3, -2], b: [4, -1], mat: 'wood' },
           ],
           roots: [[3, -3]],
+          share: true,
         },
       },
     });
@@ -295,6 +351,38 @@ test('the library rides the ask, a pick is resolved, a fresh build is saved', as
     const no = await makeCoach({ apiKey: 'k', fetch: pieces.fetchFn, library }).ask(ASK);
     assert.equal(no.grant, null);
     assert.equal(library.list().length, 2);
+
+    // A build the coach doubts is granted all the same — the kid plays —
+    // but it waits on the pending shelf for an adult, never the library
+    // (grant freely §2).
+    const doubted = claude({
+      reply: {
+        question: 'There it is — will the ants mind it?',
+        grant: {
+          kind: 'fixture',
+          name: 'Odd totem',
+          tags: ['totem'],
+          members: [
+            { a: [6, -3], b: [6, -2], mat: 'wood' },
+            { a: [6, -2], b: [7, -2], mat: 'wood' },
+          ],
+          roots: [[6, -3]],
+          share: false,
+        },
+      },
+    });
+    const held = await makeCoach({ apiKey: 'k', fetch: doubted.fetchFn, library }).ask({
+      kid: 'Pia',
+      said: 'build me a totem',
+      state: {},
+    });
+    assert.equal(held.grant.kind, 'fixture', 'the kid still gets the thing');
+    assert.equal(library.list().length, 2, 'the shelf is untouched');
+    assert.deepEqual(
+      library.pending().map((e) => [e.name, e.author]),
+      [['Odd totem', 'Pia']],
+      'the adult decides whether it publishes',
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

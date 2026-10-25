@@ -39,6 +39,14 @@ function bankColumn(i) {
 // change a single honest number of the level it dresses.
 export const SPAN_GAP = deepFreeze({
   id: 'span-gap',
+  // The problem introduces itself (decisions 2026-10-25, questions §6):
+  // canned words of ours — free, honest, the same every time, never the
+  // model's. It sets the scene and the goal; it never hints at a
+  // solution. Spoken aloud in spoken mode, shown as text otherwise.
+  intro:
+    'The ants found a gap too wide to jump, and the water below is no ' +
+    'place for an ant. Build them a way across — then say what you ' +
+    'think it can carry, and test it for real.',
   material: ANT,
   jar: 30, // links the kid may place                      REVISIT
   step: 0.1,

@@ -26,11 +26,19 @@ import {
 
 const KID = /^[\p{L}\p{N}][\p{L}\p{N} '_-]{0,39}$/u;
 
+// When leaning on the coach flags the adult (questions §4, REVISIT with
+// Stage 0): at least this many asks, outpacing journal attempts by this
+// factor. The kid is never walled — this is the educator's signal, not
+// a limit, and asks are not journal entries (the feed line is
+// untouched).
+const RELIANCE = Object.freeze({ minAsks: 12, asksPerAttempt: 2 });
+
 export function makeEducatorLog({ dir = null } = {}) {
   const journals = new Map(); // kid → journal
   // How many consecutive looks the same signal has persisted, feeding
   // the response ladder's escalation (2026-10-19 §6).
   const persistence = new Map(); // kid → { signal, count }
+  const coachUse = new Map(); // kid → { asks, over, nearGuard, resting }
   const file = dir ? join(dir, 'log.jsonl') : null;
 
   function journalOf(kid) {
@@ -51,6 +59,25 @@ export function makeEducatorLog({ dir = null } = {}) {
     }
   }
 
+  // The coach reports every ask here (service.js). Asks feed the
+  // reliance signal and nothing else; a kid who only asks is still a
+  // kid the educator can see.
+  function noteAsk(kid, info = {}, { persist = true } = {}) {
+    checkKid(kid);
+    journalOf(kid);
+    if (!coachUse.has(kid)) coachUse.set(kid, { asks: 0, over: 0, nearGuard: false, resting: false });
+    const u = coachUse.get(kid);
+    u.asks += 1;
+    if (info.over === true) u.over += 1;
+    if (info.nearGuard === true) u.nearGuard = true;
+    if (info.resting === true) u.resting = true;
+    if (persist && file) {
+      mkdirSync(dir, { recursive: true });
+      const ask = { over: info.over === true, nearGuard: info.nearGuard === true, resting: info.resting === true };
+      appendFileSync(file, `${JSON.stringify({ kid, ask })}\n`);
+    }
+  }
+
   if (file) {
     let lines = [];
     try {
@@ -60,8 +87,9 @@ export function makeEducatorLog({ dir = null } = {}) {
     }
     for (const line of lines) {
       try {
-        const { kid, entry } = JSON.parse(line);
-        accept(kid, entry, { persist: false });
+        const { kid, entry, ask } = JSON.parse(line);
+        if (ask) noteAsk(kid, ask, { persist: false });
+        else accept(kid, entry, { persist: false });
       } catch {
         /* a bad line is skipped, never fatal */
       }
@@ -104,11 +132,17 @@ export function makeEducatorLog({ dir = null } = {}) {
       else count = 1;
     }
     persistence.set(kid, { signal, count, seen: j.entries.length });
+    // Leaning on the coach alerts the adult like a fingerprint does —
+    // and only the adult (questions §4).
+    const u = coachUse.get(kid) ?? { asks: 0, over: 0, nearGuard: false, resting: false };
+    const reliant =
+      u.asks >= RELIANCE.minAsks && u.asks > RELIANCE.asksPerAttempt * j.entries.length;
     return {
       kid,
       entries: j.entries.length,
-      alert: signal !== null,
+      alert: signal !== null || reliant || u.nearGuard,
       signal,
+      coach: { ...u, reliant },
       recommendation: signal !== null ? recommend(j, { persistence: count }) : null,
       needsDebrief: needsDebrief(j),
       flag: adultFlag(j),
@@ -125,5 +159,5 @@ export function makeEducatorLog({ dir = null } = {}) {
     return journalOf(kid).entries.slice(-n);
   }
 
-  return { log, kids, flags, allFlags, attempts };
+  return { log, noteAsk, kids, flags, allFlags, attempts };
 }

@@ -40,12 +40,16 @@ material's.
 **The build order so far:** the 2026-10-22 §8 sequence (placement →
 strain language and skins → the import portal) is complete; band
 predictions — measure mode — followed (2026-10-24); and the coach step
-is decided and its engine/server half built per
-`docs/decisions/2026-10-25-the-coach-arrives.md` and
-`docs/decisions/2026-10-25-the-fixture-library.md` (fixtures and the
-coaches' shared library). The first file's §7 plus the second's §4 list
-the demo-UI work that build sessions take next. After those, the next
-step is not decided; it takes a new decision file, as always.
+is decided and its engine/server half built per the five 2026-10-25
+decision files (newest wins where they conflict): `the-coach-arrives`,
+`the-fixture-library`, `free-items-honest-physics`,
+`questions-are-not-the-ration` (questions never refused; cents guard
+the only wall; spoken mode — **no cloud speech-to-text, ever**),
+`grant-freely-publish-carefully` (library auto-publishes; doubted
+builds pend for an adult). The demo-UI work build sessions take next is
+listed in coach-arrives §7, fixture-library §4, free-items §6,
+questions §7 and grant-freely §5. After those, the next step is not
+decided; it takes a new decision file, as always.
 
 ## 3. Hard rules that bind code
 

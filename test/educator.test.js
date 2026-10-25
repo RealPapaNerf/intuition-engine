@@ -99,3 +99,49 @@ test('the log survives a restart, and a corrupt line never sinks it', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a kid leaning on the coach flags the adult — the kid is never walled', () => {
+  const log = makeEducatorLog();
+  log.log('Pia', boredEntries(2));
+  for (let i = 0; i < 12; i++) log.noteAsk('Pia', { over: i >= 10 });
+  const f = log.flags('Pia');
+  assert.deepEqual(f.coach, { asks: 12, over: 2, nearGuard: false, resting: false, reliant: true });
+  assert.equal(f.alert, true, '12 asks on 2 attempts is leaning');
+  assert.equal(f.signal, null, 'reliance is its own alert, not a fingerprint');
+
+  // A kid who asks and builds in proportion is just playing.
+  log.log('Ana', boredEntries(2));
+  for (let i = 0; i < 4; i++) log.noteAsk('Ana', {});
+  const a = log.flags('Ana');
+  assert.equal(a.coach.reliant, false);
+  assert.equal(a.alert, false);
+
+  // A kid who only asks is still a kid the educator can see.
+  log.noteAsk('Rio', {});
+  assert.ok(log.kids().includes('Rio'));
+
+  assert.throws(() => log.noteAsk('../../etc', {}), /bad kid name/);
+});
+
+test('nearing the credit guard alerts the adult before the wall', () => {
+  const log = makeEducatorLog();
+  log.noteAsk('Pia', { nearGuard: true });
+  const f = log.flags('Pia');
+  assert.equal(f.coach.nearGuard, true);
+  assert.equal(f.alert, true);
+});
+
+test('coach use survives a restart alongside the attempts', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'educator-'));
+  try {
+    const first = makeEducatorLog({ dir });
+    first.log('Pia', boredEntries(3));
+    for (let i = 0; i < 5; i++) first.noteAsk('Pia', { over: i === 4 });
+    const again = makeEducatorLog({ dir });
+    assert.equal(again.attempts('Pia').length, 3);
+    assert.equal(again.flags('Pia').coach.asks, 5);
+    assert.equal(again.flags('Pia').coach.over, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

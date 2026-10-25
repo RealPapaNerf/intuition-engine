@@ -264,25 +264,36 @@ test('fixtures join the world: anchored roots, held joints, walked routes, world
   assert.equal(fixtureLinks(SPAN_GAP).length, 0, 'the base archetype has no fixtures');
 });
 
-test('fixtures stop at the cap', () => {
+test('fixtures stop at the cap — which is solver sanity, not behavior', () => {
   let L = SPAN_GAP;
   for (let k = 0; k < GRANT_BOUNDS.fixturesMax; k++) {
+    // Distinct one-member objects, no roots: floating is allowed, and
+    // crowding the scene is protected play (questions §3).
+    const i = 1 + (k % 9);
+    const jb = -3 + Math.floor(k / 9);
     L = applyGrant(L, {
       kind: 'fixture',
       name: `Piling ${k + 1}`,
-      members: [{ a: [k + 1, -3], b: [k + 1, -2], mat: 'wood' }],
-      roots: [[k + 1, -3]],
+      members: [{ a: [i, jb], b: [i, jb + 1], mat: 'wood' }],
+      roots: [],
     });
   }
   assert.equal(
     validateGrant(L, {
       kind: 'fixture',
       name: 'One too many',
-      members: [{ a: [8, -3], b: [8, -2], mat: 'wood' }],
-      roots: [[8, -3]],
+      members: [{ a: [10, -3], b: [10, -2], mat: 'wood' }],
+      roots: [],
     }),
     'fixtures-full',
   );
+});
+
+test('the problem introduces itself in canned words that ride every variant', () => {
+  assert.equal(typeof SPAN_GAP.intro, 'string');
+  assert.ok(SPAN_GAP.intro.length > 0, 'the base carries its own introduction');
+  const variant = applyGrant(SPAN_GAP, { kind: 'links', count: 5 });
+  assert.equal(variant.intro, SPAN_GAP.intro, 'the intro rides every variant');
 });
 
 // --- The hand calculation, through granted silk ---------------------------

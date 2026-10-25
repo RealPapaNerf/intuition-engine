@@ -10,8 +10,15 @@
 // the live level — bounds, ground, floating and all. Stored files are
 // never trusted: each is shape-checked on read, and a corrupt or edited
 // one is skipped, never fatal (the saved-costume rule).
+//
+// Publishing (decisions 2026-10-25, grant freely): a save calls the
+// publish hook — gitPublisher commits and pushes that one file, so every
+// machine's coaches share one shelf. Builds the coach doubted land on
+// fixtures/pending/ instead: never searched, never offered, never
+// pushed, waiting for an adult to approve or reject.
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { MATERIALS } from '../engine/materials.js';
 import { GRANT_BOUNDS } from '../engine/grants.js';
@@ -96,46 +103,128 @@ export function normalize({ name, tags = [], members, roots }) {
   };
 }
 
-export function makeFixtureLibrary({ dir }) {
-  const entries = new Map(); // id → entry
+// The auto-publisher: commit and push one saved fixture file, nothing
+// else — never the rest of a tree another session may have dirtied.
+// Best-effort all the way down: a failed push stays a local commit and
+// rides the next one; nothing here may block or fail a save.
+export function gitPublisher(repoRoot) {
+  const git = (args) =>
+    new Promise((resolve) => {
+      execFile('git', args, { cwd: repoRoot }, (err) => resolve(!err));
+    });
+  return async (file, entry) => {
+    if (!(await git(['add', file]))) return;
+    const who = entry.author ? ` (built with ${entry.author})` : '';
+    if (!(await git(['commit', '-m', `fixture library: ${entry.name}${who}`, '--', file]))) return;
+    await git(['push']);
+  };
+}
 
-  function load() {
-    entries.clear();
+export function makeFixtureLibrary({ dir, publish = null }) {
+  const entries = new Map(); // id → entry (the published shelf)
+  const held = new Map(); // id → entry (fixtures/pending/, adult business)
+  const pendingDir = () => join(dir, 'pending');
+
+  function readInto(map, from) {
     let files = [];
     try {
-      files = readdirSync(dir).filter((f) => f.endsWith('.json'));
+      files = readdirSync(from).filter((f) => f.endsWith('.json'));
     } catch {
-      return; // no library yet
+      return; // no shelf yet
     }
     for (const f of files) {
       try {
-        const e = JSON.parse(readFileSync(join(dir, f), 'utf8'));
-        if (ID.test(e.id ?? '') && checkEntry(e) === null && !entries.has(e.id)) {
-          entries.set(e.id, e);
+        const e = JSON.parse(readFileSync(join(from, f), 'utf8'));
+        if (ID.test(e.id ?? '') && checkEntry(e) === null && !map.has(e.id)) {
+          map.set(e.id, e);
         }
       } catch {
         /* a bad file is skipped, never fatal */
       }
     }
   }
+
+  function load() {
+    entries.clear();
+    held.clear();
+    readInto(entries, dir);
+    readInto(held, pendingDir());
+  }
   load();
 
-  // Save a built fixture, normalized, with the asking kid credited. The
-  // same shape under a different name is still the same work: dedupe by
-  // the members' own geometry.
-  function save({ name, tags = [], members, roots, author = null }) {
+  function asEntry({ name, tags = [], members, roots, author = null }) {
     const entry = normalize({ name, tags, members, roots });
     const why = checkEntry(entry);
     if (why) throw new Error(`library refused: ${why}`);
     const body = fnv(JSON.stringify({ members: entry.members, roots: entry.roots }));
-    const existing = [...entries.values()].find((e) => e.body === body);
-    if (existing) return existing;
     const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${body.slice(0, 6)}`;
-    const full = { id, body, ...entry, author, at: new Date().toISOString().slice(0, 10) };
-    entries.set(id, full);
+    return { id, body, ...entry, author, at: new Date().toISOString().slice(0, 10) };
+  }
+
+  // Save a built fixture, normalized, with the asking kid credited. The
+  // same shape under a different name is still the same work: dedupe by
+  // the members' own geometry. A save publishes (the hook commits and
+  // pushes the one file) — publication never blocks or fails the save.
+  function save(raw) {
+    const full = asEntry(raw);
+    const existing = [...entries.values()].find((e) => e.body === full.body);
+    if (existing) return existing;
+    entries.set(full.id, full);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${id}.json`), `${JSON.stringify(full, null, 2)}\n`);
+    const file = join(dir, `${full.id}.json`);
+    writeFileSync(file, `${JSON.stringify(full, null, 2)}\n`);
+    if (publish) {
+      try {
+        Promise.resolve(publish(file, full)).catch(() => {});
+      } catch {
+        /* publishing never fails a save */
+      }
+    }
     return full;
+  }
+
+  // A build the coach doubted: held for an adult, never searched, never
+  // offered, never pushed (grant freely §2). A shape already on either
+  // shelf is not held twice.
+  function pend(raw) {
+    const full = asEntry(raw);
+    const published = [...entries.values()].find((e) => e.body === full.body);
+    if (published) return published;
+    const waiting = [...held.values()].find((e) => e.body === full.body);
+    if (waiting) return waiting;
+    held.set(full.id, full);
+    mkdirSync(pendingDir(), { recursive: true });
+    writeFileSync(join(pendingDir(), `${full.id}.json`), `${JSON.stringify(full, null, 2)}\n`);
+    return full;
+  }
+
+  function pending() {
+    return [...held.values()].map(({ id, name, tags, author, at }) => ({ id, name, tags, author, at }));
+  }
+
+  // The adult's two verbs. Approve moves a held build onto the shelf
+  // (which publishes it, credited to the kid); reject deletes it.
+  function approve(id) {
+    const e = held.get(id);
+    if (!e) return null;
+    const saved = save(e);
+    held.delete(id);
+    try {
+      unlinkSync(join(pendingDir(), `${id}.json`));
+    } catch {
+      /* already gone is gone */
+    }
+    return saved;
+  }
+
+  function reject(id) {
+    if (!held.delete(id)) return false;
+    try {
+      unlinkSync(join(pendingDir(), `${id}.json`));
+    } catch {
+      /* already gone is gone */
+    }
+    return true;
   }
 
   // Search by the kid's own words: token overlap on name and tags,
@@ -175,5 +264,5 @@ export function makeFixtureLibrary({ dir }) {
     return [...entries.values()].map(({ id, name, tags, author, at }) => ({ id, name, tags, author, at }));
   }
 
-  return { save, search, place, list, load };
+  return { save, pend, pending, approve, reject, search, place, list, load };
 }

@@ -15,7 +15,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeCoach } from '../coach/service.js';
 import { makeEducatorLog } from '../coach/educator.js';
-import { makeFixtureLibrary } from '../coach/library.js';
+import { gitPublisher, makeFixtureLibrary } from '../coach/library.js';
 import { BASES, GRANT_BOUNDS } from '../engine/grants.js';
 import { MATERIALS } from '../engine/materials.js';
 
@@ -118,8 +118,21 @@ const sendJson = (res, status, value) =>
 
 // POST /coach/ask · GET /coach/fixtures[?q=] · POST /educator/log ·
 // GET /educator/kids · GET /educator/flags[/<kid>] ·
-// GET /educator/attempts/<kid>
+// GET /educator/attempts/<kid> · GET /educator/pending ·
+// POST /educator/approve · POST /educator/reject
 async function adults(req, res, url, { coach, educator, library }) {
+  // The pending shelf: builds the coach doubted, waiting for an adult
+  // (grant freely §2). Approve publishes, reject deletes.
+  if (url.pathname === '/educator/approve' || url.pathname === '/educator/reject') {
+    if (req.method !== 'POST') return send(res, 405, 'POST only');
+    const body = await readJson(req);
+    if (!body || typeof body.id !== 'string') return send(res, 400, 'needs { id }');
+    if (url.pathname === '/educator/approve') {
+      const saved = library.approve(body.id);
+      return saved ? sendJson(res, 200, saved) : send(res, 404, 'not pending');
+    }
+    return library.reject(body.id) ? sendJson(res, 200, { gone: true }) : send(res, 404, 'not pending');
+  }
   if (url.pathname === '/coach/ask') {
     if (req.method !== 'POST') return send(res, 405, 'POST only');
     const body = await readJson(req);
@@ -154,6 +167,7 @@ async function adults(req, res, url, { coach, educator, library }) {
     }
   }
   if (req.method !== 'GET') return send(res, 405, 'GET only');
+  if (url.pathname === '/educator/pending') return sendJson(res, 200, library.pending());
   if (url.pathname === '/educator/kids') return sendJson(res, 200, educator.kids());
   if (url.pathname === '/educator/flags') return sendJson(res, 200, educator.allFlags());
   const flagsOf = url.pathname.match(/^\/educator\/flags\/([^/]+)$/);
@@ -166,9 +180,11 @@ async function adults(req, res, url, { coach, educator, library }) {
 export function makeHandler({
   root,
   fetch: fetchFn = globalThis.fetch,
-  library = makeFixtureLibrary({ dir: join(root, 'fixtures') }),
-  coach = makeCoach({ fetch: fetchFn, library }),
+  // Saved fixtures auto-publish: one file committed and pushed, nothing
+  // else (grant freely §1). Held builds stay local on fixtures/pending/.
+  library = makeFixtureLibrary({ dir: join(root, 'fixtures'), publish: gitPublisher(root) }),
   educator = makeEducatorLog({ dir: join(root, 'demo/.educator-log') }),
+  coach = makeCoach({ fetch: fetchFn, library, educator }),
 } = {}) {
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');

@@ -1,4 +1,7 @@
 # The educator's kitchen-table log (coach/educator.js): kids' journal
 # entries, per device, never committed.
 demo/.educator-log/
+# Builds the coach doubted, waiting for an adult (decisions 2026-10-25,
+# grant freely §2): never published, so never committed.
+fixtures/pending/
 node_modules/
