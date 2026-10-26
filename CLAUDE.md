@@ -57,13 +57,22 @@ commits: the Consultant's "unit-3 depth" is the demo's Feel/Measure
 toggle (so it starts on when measuring, and a button pins it either
 way), and "verify it" is the journal's `deferred`.
 
-**Then the kitchen table opened** (Stage 0), and what it found is the
-newest decision: `2026-10-25-the-debrief` — the kid is actually asked
-one now, including on a problem they resolved after failing it, which
-2026-10-19 §7 did not have. Stage 0 also found that a demo server
-started without `ANTHROPIC_API_KEY` grants nothing, so the kid's page
-now says plainly when no coach is there. **After that, the next step
-is not decided; it takes a new decision file, as always.**
+**Then the kitchen table opened** (Stage 0), and what it found became
+three more decision files. `the-debrief` is **built**: the kid is
+actually asked one now, including on a problem they resolved after
+failing it, which 2026-10-19 §7 did not have, and it spends nothing.
+Stage 0 also found that a server started without `ANTHROPIC_API_KEY`
+grants nothing, so the kid's page now says plainly when no coach is
+there.
+
+`the-kid-places-it` and `the-setting-and-the-shelf` are **decided and
+not yet built** — the next build order is the second one's §8: the
+shelf the kid takes from (which unblocks a keyless table), then
+inventory and placing, then the build meter in cents, then the
+educator's question queue, then settings. Read both before touching
+grants, the library or the coach's economy: between them they retire
+free items §4, correct what "level authoring" means, and make the
+money about building rather than talking.
 
 ## 3. Hard rules that bind code
 
