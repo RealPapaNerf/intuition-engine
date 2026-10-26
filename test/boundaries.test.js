@@ -47,3 +47,11 @@ test('no package anywhere: the game reaches the engine, skins and portal; only t
   const node = specifiers('demo').filter(([, s]) => /^node:/.test(s)).map(([file]) => file);
   assert.deepEqual([...new Set(node)], ['demo/serve.js']);
 });
+
+test('the systems pack reaches only itself and the engine’s freeze; a system is data and imports nothing', () => {
+  assert.ok(specifiers('systems').length >= 6, 'the reader found the pack’s imports');
+  assert.deepEqual(breaks('systems', (s) => /^\.\/([\w-]+\/)?[\w-]+\.js$/.test(s) || s === '../engine/freeze.js'), []);
+  const found = specifiers('systems/library');
+  assert.ok(found.every(([file]) => file === 'systems/library/index.js'), 'only the index imports: the systems themselves are data');
+  assert.deepEqual(breaks('systems/library', (s) => /^\.\/[\w-]+\.js$/.test(s)), []);
+});
