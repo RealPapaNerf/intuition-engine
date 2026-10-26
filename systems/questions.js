@@ -206,11 +206,15 @@ export function ask(system, bench, { mode = 'feel', round = 0, seed = '', kind =
   if (type === 'direction') {
     const pool = gauges(system, bench, changed);
     const about = pool[Math.floor(rng() * pool.length)];
+    const gauge = gaugeName(system, about);
+    // Against the system as it ships, and the question says so: a kid
+    // mending a broken one would otherwise compare with the broken one.
     return {
       type,
       kind: 'binary',
       about,
-      asks: `What happens to ${gaugeName(system, about)}: more, less, or about the same?`,
+      gauge,
+      asks: `Compared with how it ships, what happens to ${gauge}: more, less, or about the same?`,
       options: [
         { id: 'up', label: 'More', icon: '⬆️' },
         { id: 'same', label: 'About the same', icon: '↔️' },

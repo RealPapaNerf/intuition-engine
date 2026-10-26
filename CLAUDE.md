@@ -29,13 +29,24 @@ thing.
    briefs and the README where they conflict.** They are append-only:
    never edit an old one; a new decision gets a new dated file.
 4. The pack briefs (`intuitive-engineers-brief.md`,
-   `intuitive-negotiators-brief.md`) for the long-range design.
+   `intuitive-negotiators-brief.md`, `intuitive-systems-thinkers-brief.md`)
+   for the long-range design.
 
 The negotiators pack (`negotiation/`, `demo/lens.html`) runs in
 parallel to the engineers pack — see
 `docs/decisions/2026-10-22-the-lens.md`. The lens only asks; the trust
 meter is never shown live; a brief's numbers are frozen like a
 material's.
+
+The systems pack (`systems/`, `demo/apart.html`, `demo/workbench.html`)
+runs in parallel too — see `docs/decisions/2026-10-26-pull-it-apart.md`.
+Pull a system apart, break it, fix it: three laws (conduct, oneway,
+react) and a solver are its whole physics; a kid's every question is an
+intervention on the bench (out, bad, good, another, beside / in line,
+blocked); the questions are made from the system and answered by the
+run, never written down; and a grown-up reads a system's answer key at
+the Workbench before any kid plays it. It is built — engine, five
+systems, both pages — and does not reorder the engineers' build order.
 
 **The build order so far:** the 2026-10-22 §8 sequence (placement →
 strain language and skins → the import portal) is complete; band
@@ -102,6 +113,13 @@ wrong even if it works.
   only through `adultFlag()` and are never rendered to the kid.
 - **Score the goal, never the method.** Level checks test what is
   true, not how it was done. Sim-breaking is a badge, not cheating.
+- **A system file chooses laws, never writes one.** `systems/` has three
+  laws; a system picks among them, wires them and gives them numbers,
+  and says what it models, where the numbers come from and what it
+  leaves out. A new law (a motor's coupling, drag's square) takes its
+  own decision file and hand calculations. Every system a kid plays has
+  been read — its answer key, every change run — by an adult first; an
+  AI-composed one most of all.
 
 ## 4. Conventions
 

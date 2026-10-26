@@ -167,6 +167,7 @@ let selected = null;
 let lastTouched = null;
 let repairing = false; // the last change put something back the way it ships
 let phase = 'look'; // 'look' | 'gate' | 'playing' | 'result'
+let lastVerdict = null; // how the last scored run on this system ended
 let pending = null; // the open call: question, answer, advice, trust
 let skip = 0; // "ask me something else"
 let play = null; // the playback
@@ -225,6 +226,7 @@ function choose(id) {
   selected = null;
   lastTouched = null;
   repairing = false;
+  lastVerdict = null;
   pending = null;
   play = null;
   picking = null;
@@ -285,10 +287,9 @@ function setDepth(d) {
 // --- The kid's hands: changes to the bench ----------------------------------
 function onPick(what) {
   if (phase === 'playing') return;
-  if (picking) {
-    picking(what);
-    return;
-  }
+  // A tap may answer something first (a move's target, "which stops
+  // first"); one it can't use falls through to choosing a part.
+  if (picking && picking(what)) return;
   if (what.none) {
     selected = null;
   } else if (what.flow) {
@@ -409,7 +410,7 @@ function startMove(id) {
       picking = null;
       diagram.setPickable(null);
       hint('Moving cancelled.');
-      return;
+      return true;
     }
     const target = what.part;
     picking = null;
@@ -429,6 +430,7 @@ function startMove(id) {
       b.onclick = () => tryChange(() => place(S, bench, id, target, how), id);
       acts.appendChild(b);
     }
+    return true;
   };
 }
 
@@ -439,8 +441,12 @@ function openGate() {
   hide('result');
   $('gateerr').textContent = '';
   const key = benchKey(S, bench);
-  if (mode === 'apart' && seenKeys().has(key)) {
+  // A setup already called can't be called again unchanged — except a
+  // repair after a failure, even one that puts it back the way it ships:
+  // "does that fix it?" is the troubleshooter's own question.
+  if (mode === 'apart' && seenKeys().has(key) && !(repairing && lastVerdict === 'fails')) {
     pending = null;
+    picking = null;
     $('advice').textContent = '';
     $('trustrow').replaceChildren();
     $('question').textContent = key ? 'You have seen this one. Change something to make a new call.' : 'This is how it ships. Change something, then call it.';
@@ -466,7 +472,14 @@ function openGate() {
             { id: 'fails', label: 'No, still broken', icon: '🚫' },
           ],
         }
-      : ask(S, bench, { mode: depth, round, seed: `${kid}:${S.id}:${key}`, focus: lastTouched });
+      : ask(S, bench, {
+          mode: depth,
+          round,
+          seed: `${kid}:${S.id}:${key}`,
+          focus: lastTouched,
+          // mending after a failure, the troubleshooter's question is the one
+          kind: repairing && lastVerdict === 'fails' && depth === 'feel' ? 'works' : null,
+        });
   pending = { question, key, bench, answer: null, advice: null, trust: null, run: current };
   hint(question.type === 'first' ? 'Tap the part on the diagram, or pick it below — then run it.' : 'Say what will happen — then run it.');
   $('gate').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -527,10 +540,10 @@ function renderGate() {
     if (question.type === 'first') {
       const ids = question.options.map((o) => o.id);
       picking = (what) => {
-        if (what.part && ids.includes(what.part)) {
-          pending.answer = what.part;
-          renderGate();
-        }
+        if (!what.part || !ids.includes(what.part)) return false;
+        pending.answer = what.part;
+        renderGate();
+        return true;
       };
     } else picking = null;
   } else {
@@ -650,6 +663,8 @@ function finish() {
   const { entry, hit, truth } = score(S, question, commitment, result, H, { bench: call.bench, repair: repairing, consultant, level: levelId(), setup: call.key });
   record(journal, entry);
   saveJournal();
+  lastVerdict = result.verdict;
+  repairing = false; // the flag was the change's, and the run has answered it
   rounds[S.id] = (rounds[S.id] ?? 0) + 1;
   save('apart-rounds', rounds);
   held = entry;

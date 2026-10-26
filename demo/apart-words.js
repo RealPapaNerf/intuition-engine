@@ -144,7 +144,7 @@ export function claimWords(system, question, advice) {
   const say = (s) => `🤖 The Consultant says: “${s}”`;
   if (question.type === 'works') return say(advice.claim === 'works' ? 'It will still do its job.' : 'It will stop doing its job.');
   if (question.type === 'direction') {
-    const what = question.asks.replace(/^What happens to /, '').replace(/: more, less, or about the same\?$/, '');
+    const what = question.gauge;
     return say({ up: `${cap(what)} will go up.`, down: `${cap(what)} will go down.`, same: `${cap(what)} will stay about the same.` }[advice.claim]);
   }
   return say(`About ${onScale(advice.claim, question.resolution, question.unit)}.`);
