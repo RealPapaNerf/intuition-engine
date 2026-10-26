@@ -394,3 +394,13 @@ test('a kid name is required and bounded', async () => {
   assert.equal((await coach.ask({ said: 'hi' })).why, 'bad-kid');
   assert.equal((await coach.ask({ kid: 'x'.repeat(41), said: 'hi' })).why, 'bad-kid');
 });
+
+// Stage 0 found this one: with no key nothing is granted, and a kid
+// taps a picture into silence. Whether a coach exists at all is world
+// knowledge, free and askable before the first tap (demo/coachbox.js
+// asks once on load) — and it never says anything about the key.
+test('the coach says whether it is there at all', () => {
+  assert.equal(makeCoach({ apiKey: 'k', fetch: async () => ({}) }).here(), true);
+  assert.equal(makeCoach({ apiKey: '', fetch: async () => ({}) }).here(), false);
+  assert.equal(makeCoach({ apiKey: undefined, fetch: async () => ({}) }).here(), false);
+});

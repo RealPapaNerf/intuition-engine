@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PROMPTS, tickerWords, forestWords, libraryWords } from '../demo/coachbox.js';
+import { PROMPTS, NO_COACH, tickerWords, forestWords, libraryWords } from '../demo/coachbox.js';
 
 test('the ticker shows the bill, and never says no', () => {
   const normal = tickerWords({
@@ -48,4 +48,10 @@ test('the tap-to-pick prompts ask for things, and never for an answer', () => {
   for (const p of PROMPTS) {
     assert.ok(p.icon && p.label && p.said.endsWith('?'), `${p.label} asks a question`);
   }
+});
+
+test('a coach who was never there says so, where the eye is', () => {
+  assert.match(NO_COACH, /No coach today/);
+  assert.match(NO_COACH, /everything still works/i, 'the game is playable without one');
+  assert.doesNotMatch(NO_COACH, /key|API|server|error/i, 'the kid is not shown an operator problem');
 });

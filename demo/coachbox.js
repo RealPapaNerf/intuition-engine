@@ -48,6 +48,13 @@ const FOREST_WORDS = Object.freeze({
 
 const cents = (c) => `${(Number(c) || 0).toFixed(2)}¢`;
 
+// Nobody is on the other end (no ANTHROPIC_API_KEY on the server). The
+// game is fully playable without a coach — but the kid has to be able
+// to SEE that, in the coach's own line, before they tap a picture and
+// nothing happens. Stage 0 found this the hard way.
+export const NO_COACH =
+  '🧑‍🏫 No coach today — but everything still works. Build, test it, and look around all you like.';
+
 // What the coach's answer costs and what is left of the two budgets.
 // The question count ticking to zero is pacing, not a refusal, and it
 // says so (questions §1).
@@ -98,6 +105,7 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
   const history = [];
   let open = false; // asking is a between-rounds thing
   let busy = false;
+  let present = true; // until the world says otherwise
   let who = kid;
 
   const show = (text) => {
@@ -105,10 +113,24 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
   };
 
   function enable() {
-    const can = open && !busy;
+    const can = open && !busy && present;
     els.ask.disabled = !can;
     els.text.disabled = !can;
+    // With no coach the asking buttons go quiet rather than pretending;
+    // the free lookups below them keep working, because they always
+    // did — they never needed a coach.
     for (const b of els.picks.querySelectorAll('button')) b.disabled = !can;
+  }
+
+  function setPresent(yes) {
+    const was = present;
+    present = yes !== false;
+    if (!present) {
+      show(NO_COACH);
+      els.ticker.textContent = '';
+      if (was) speak(NO_COACH); // said once, not on every lookup
+    }
+    enable();
   }
 
   async function ask(said) {
@@ -132,7 +154,8 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
     busy = false;
     els.ticker.textContent = tickerWords(r);
     if (!r.on) {
-      show('');
+      if (r.why === 'no-key') setPresent(false);
+      else show('');
       enable();
       return;
     }
@@ -157,6 +180,7 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
     try {
       const res = await fetchFn(what === 'forest' ? '/coach/forest' : '/coach/fixtures');
       const data = res.ok ? await res.json() : null;
+      if (what === 'forest' && data) setPresent(data.coach !== 'out');
       const words = what === 'forest' ? forestWords(data) : libraryWords(data);
       els.browseout.textContent = words;
       speak(words);
@@ -184,9 +208,16 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
     els.picks.append(b);
   }
   enable();
+  // One free lookup on the way in, so an absent coach is visible before
+  // the first tap rather than after it.
+  Promise.resolve(fetchFn('/coach/forest'))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => setPresent(!d || d.coach !== 'out'))
+    .catch(() => {});
 
   return {
     ask,
+    setPresent,
     setOpen(v) {
       open = v === true;
       enable();

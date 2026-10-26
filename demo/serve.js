@@ -154,6 +154,10 @@ async function adults(req, res, url, { coach, educator, library }) {
       materials: Object.keys(MATERIALS),
       bases: Object.keys(BASES),
       bounds: GRANT_BOUNDS,
+      // Whether anyone is on the other end of /coach/ask. The demo asks
+      // once, on load, so a kid is never tapping at a coach who was
+      // never there (ANTHROPIC_API_KEY unset).
+      coach: coach?.here?.() ? 'in' : 'out',
     });
   }
   if (url.pathname === '/educator/log') {

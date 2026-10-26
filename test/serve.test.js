@@ -69,3 +69,17 @@ test('nothing else gets through the door; the static files still serve, and only
   assert.match(page.headers.get('content-type'), /text\/html/);
   assert.equal((await get('/..%2f..%2fetc/passwd')).status, 404);
 });
+
+// Stage 0 found this one: with no ANTHROPIC_API_KEY nothing is ever
+// granted, and a kid taps a picture prompt into silence. Whether a
+// coach exists at all is world knowledge — free, and askable before
+// the first tap (demo/coachbox.js asks once on load).
+test('the forest route says whether a coach is there at all, for free', async () => {
+  const r = await get('/coach/forest');
+  assert.equal(r.status, 200);
+  const forest = await r.json();
+  assert.equal(forest.coach, 'out', 'no key in a test run');
+  assert.ok(forest.grants.includes('fixture'));
+  assert.ok(forest.materials.includes('wood'));
+  assert.equal(JSON.stringify(forest).includes('ANTHROPIC'), false, 'nothing about the key itself');
+});

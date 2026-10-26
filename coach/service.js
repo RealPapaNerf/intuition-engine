@@ -443,5 +443,13 @@ export function makeCoach({
     };
   }
 
-  return { ask, left };
+  // Is there a coach at all today? The game is playable without one
+  // (coach arrives §3: no key, same thing as a quiet coach), but the
+  // kid must be able to SEE that nobody is there rather than tapping
+  // into silence — so this travels with the free world-knowledge
+  // route. It says whether a coach exists, never anything about the
+  // key itself.
+  const here = () => Boolean(apiKey);
+
+  return { ask, left, here };
 }

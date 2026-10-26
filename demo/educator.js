@@ -70,6 +70,34 @@ function writeLocal(key, value) {
   }
 }
 
+// Whether there is a coach at all is adult business: the key lives on
+// the server, and only an adult can put it there.
+async function paintCoach() {
+  try {
+    const forest = await get('/coach/forest');
+    if (forest.coach === 'out') {
+      $('coachstate').replaceChildren(
+        el('p', {
+          textContent:
+            'The coach is out: this server was started without ANTHROPIC_API_KEY, so asking for ' +
+            'things does nothing. The game plays fine without it — the kid can still build, test, ' +
+            'measure and look around, and their page says so plainly.',
+        }),
+        el('p', {
+          className: 'note',
+          textContent: 'To let the coach in: stop the server and start it again as ANTHROPIC_API_KEY=sk-… npm run demo',
+        }),
+      );
+    } else {
+      $('coachstate').replaceChildren(
+        el('p', { textContent: 'The coach is in. Spending is capped per kid per day, in cents.' }),
+      );
+    }
+  } catch {
+    $('coachstate').replaceChildren(el('p', { className: 'note', textContent: 'Could not reach the server.' }));
+  }
+}
+
 function paintPlayer() {
   const reads = readLocal(READER) === 'true';
   $('kidname').value = readLocal(KID, 'friend') || 'friend';
@@ -300,6 +328,7 @@ $('listall').onclick = () => {
 };
 
 paintPlayer();
+paintCoach();
 loadKids();
 loadPending();
 loadLibrary();
