@@ -58,11 +58,11 @@ The stack, top to bottom:
 | `docs/philosophy.md` | The plan of record: mission, invariants, the domain pack contract, and how we'd know it's working |
 | `docs/` | The domain pack briefs (engineering, negotiation) |
 | `engine/` | The shared 2D node-and-member physics engine (plain ES modules, no dependencies): springs with tension/compression limits, tension-only materials, members with their own weight, dynamic relaxation for statics, breakage, and member-shedding topology optimization over every load case. Plus the first goal archetype (`archetypes.js`: span the gap), the kid's design as data (`blueprint.js`: placement rules, the jar, the frog's route), and the crossing (`crossing.js`: cargo walks the kid's bridge, judged quasi-statically). The invariant visual layer too: the strain language every skin performs (`strain.js`: droop, grip, tremble, slip, recoil) and the skin boundary (`manifest.js`: a manifest may hold only pictures and names, an imported model only as a picture with its credits under an accepted license; the physics is frozen). And the scale (`measure.js`): a bridge's breaking load, measured by bisection over real crossings |
-| `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding, self-weight, the V bridge's W/(2·sinθ) and its snap and sag limits, the lever rule, placement and routing, the droop curve's length and the recoil's energy, and manifests that try to carry physics. Plus the import portal's rules: glTF parsing (transforms, strips, sparse data, refusals), the sprite rasterizer (framing, views, depth, light, textures), the license and host allowlist, the Poly Pizza door, and the import boundaries between engine, skins, portal and game |
+| `test/` | Hand-calculation validation (`node --test`): spring extension, two-bar truss forces, tension-only slack, breakage, shedding, self-weight, the V bridge's W/(2·sinθ) and its snap and sag limits, the lever rule, placement and routing, the droop curve's length and the recoil's energy, and manifests that try to carry physics. Plus the import portal's rules: glTF parsing (transforms, strips, sparse data, refusals), the sprite rasterizer (framing, views, depth, light, textures), the license and host allowlist, the Poly Pizza door, and the import boundaries between engine, skins, portal and game. And the coach's: the leashes and the caps, the Consultant's curated errors, the library's shape checks, the educator's packet, and the demo's own pure modules — the cargo ladder a grant grows under a costume, the world the shed may never send home, and the words the kid and the grown-up are shown |
 | `negotiation/` | Pack #2's honest core (decisions 2026-10-22, the lens): the hidden brief in the MBA simulation's own format (`brief.js`: issues, options, a point schedule per party, reservation values, caps; Pareto frontier, money on the table), the trust meter's fixed rules (`trust.js`), the scripted counterpart that plays its brief (`counterpart.js`), the predict gate (`prep.js`), the question-only lens (`lens.js`), and the first brief, The Offer Letter (`scenarios/`) |
 | `skins/` | The starter skins (decisions 2026-10-22 §6): ants, stuffed animals, knotted sheets — the same tension chain in three costumes, original and generic |
 | `portal/` | The import portal's machinery (decisions 2026-10-22 §5–6), no dependencies: `library.js` (the allowlist: which libraries, where their files may come from, which licenses a model may carry, and its credit line), `gltf.js` (a bounds-checked glTF 2.0 reader; Draco and meshopt refused by name), `sprite.js` (normalization, and a small software rasterizer that draws a model once, from a locked camera, into the picture a costume carries) |
-| `demo/` | The current playables: Will It Break — the kid builds the bridge, calls it (Feel it: holds/breaks · Measure it: a band in grams, judged by the scale), the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it). The Lens (`lens.html`) — negotiation practice with a coach in your eye line: commit your read of the other side, talk, see the replay. And `portal.html`, the costume portal for grown-ups: dress the game in CC models and credit them; `serve.js` is its door to Poly Pizza |
+| `demo/` | The current playables: Will It Break — the kid builds the bridge, calls it (Feel it: holds/breaks · Measure it: a band in grams, judged by the scale), the cargo walks it, and the lazy colony sheds the kid's own bridge; costume buttons flip the same physics between skins with the numbers on screen (`render.js` draws it). The coach is in the page too (`coachbox.js`): ask it for a thing and it stocks the world — a creature, more ants, wood, a branch, a tree — with the bill for the question shown on purpose, and two free lookups that cost nothing. The Consultant answers and is wrong about one time in five (`advice.js`, thinking in `consultant-worker.js`): trust it, doubt it or run it, then name what kind of wrong it was. Spoken mode reads the game aloud and takes tap-to-pick answers (`speak.js`) — **no speech recognition, ever**. `variant.js` follows a level the coach has granted into. The Lens (`lens.html`) — negotiation practice with a coach in your eye line: commit your read of the other side, talk, see the replay. `educator.html` is the grown-up's window: flags and their evidence, how much a kid is leaning on the coach, the builds waiting to be published, the shared library, and the reader toggle. And `portal.html`, the costume portal: dress the game in CC models and credit them; `serve.js` is the door to Claude, to Poly Pizza, and to the educator's routes |
 | `docs/decisions/` | Append-only decision log from design sessions. **Newest first; these override the briefs where they conflict** |
 | `CLAUDE.md` | Standing instructions for any session building here — read it first |
 
@@ -71,12 +71,19 @@ The stack, top to bottom:
 ```bash
 npm test       # validates the engine against hand calculations
 npm run demo   # serves the playables at http://localhost:8123/demo/index.html
-               # and http://localhost:8123/demo/lens.html, and the costume
-               # portal at http://localhost:8123/demo/portal.html
+               # and http://localhost:8123/demo/lens.html, the costume portal
+               # at http://localhost:8123/demo/portal.html, and the educator's
+               # window at http://localhost:8123/demo/educator.html
 ```
 
 (The demo needs the server: browsers block ES-module imports over
 `file://`.)
+
+The live coach needs `ANTHROPIC_API_KEY` set for the demo server —
+the key never reaches the browser, and spending is capped per kid per
+day in cents. Without it the coach is simply out and the game plays
+fine. Name the player and flip the reader toggle in the educator's
+window; the game tab follows.
 
 The costume portal searches two libraries. glTF Sample Assets
 (Khronos) needs no key; the browser fetches it from
@@ -134,7 +141,30 @@ costume row.
       scale is a frozen instrument on the archetype (0–500 g at 5 g,
       REVISIT); the journal's band machinery, already built, scores the
       reading against the band and keeps feeding the width detectors
+- [x] The coach arrives (decisions 2026-10-25, five files): live
+      Claude behind a leash it cannot talk its way past — the reply
+      must be a question, a grant is re-validated against a level the
+      server replays from the grant list itself, and the prompt is
+      built from a whitelist of what the kid can see. The coach may
+      stock the world (a creature, links, wood or silk, rocks, a
+      composed fixture) but never build the kid's bridge, and every
+      grant makes a new frozen level variant. Fixtures go onto a
+      shared library every coach grabs from before composing anew;
+      builds the coach doubts wait for an adult on the pending shelf.
+      Questions are never refused — the per-problem budget is a pacing
+      meter and the daily cents guard is the only wall, with a free
+      canned question behind it. The kid sees the bill, because
+      budgeting is curriculum. The Consultant answers and is wrong
+      about one time in five, in curated ways catchable by reasoning
+      against reality; the kid commits trust / doubt / run-it before
+      the predict gate and names the error afterwards. Spoken mode
+      plays the whole game before reading does — speechSynthesis and
+      tap-to-pick pictures, and **never** speech recognition: a kid's
+      voice does not leave the machine. The educator's window holds
+      everything the kid must not see
 - [ ] **Next: not decided yet.** A new decision file picks what
-      follows; the queued candidates are the Consultant / AI coach and
-      sag-depth bands, plus the portal's still-open license ratification
-- [ ] The Consultant; the AI coach
+      follows; the queued candidates are sag-depth bands, the water
+      pack (buoyancy and hydrostatic load, which pontoons and real
+      dams wait on), and a local speech-to-text listener so the mic
+      button can exist — plus the portal's still-open license
+      ratification

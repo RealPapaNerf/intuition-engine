@@ -46,10 +46,18 @@ decision files (newest wins where they conflict): `the-coach-arrives`,
 `questions-are-not-the-ration` (questions never refused; cents guard
 the only wall; spoken mode — **no cloud speech-to-text, ever**),
 `grant-freely-publish-carefully` (library auto-publishes; doubted
-builds pend for an adult). The demo-UI work build sessions take next is
-listed in coach-arrives §7, fixture-library §4, free-items §6,
-questions §7 and grant-freely §5. After those, the next step is not
-decided; it takes a new decision file, as always.
+builds pend for an adult). **The demo UI that wears all of it is built
+too** — the whole 16-item handoff list in coach-arrives §7,
+fixture-library §4, free-items §6, questions §7 and grant-freely §5:
+the coach box and its ticker, the Consultant's gate and postmortem,
+multi-material placement, fixture and granted-cargo rendering, spoken
+mode, the intro card, and `demo/educator.html`. Two readings the
+decision files left open were settled in code and said so in the
+commits: the Consultant's "unit-3 depth" is the demo's Feel/Measure
+toggle (so it starts on when measuring, and a button pins it either
+way), and "verify it" is the journal's `deferred`. **With that list
+done, the next step is not decided; it takes a new decision file, as
+always.**
 
 ## 3. Hard rules that bind code
 
