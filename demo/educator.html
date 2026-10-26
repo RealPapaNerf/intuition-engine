@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Educator's Window</title>
+  <link rel="icon" href="data:," />
+  <style>
+    [hidden] { display: none !important; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f4efe4;
+      color: #2b2620;
+      margin: 0;
+      padding: 16px;
+    }
+    header, main { max-width: 1200px; margin: 0 auto; }
+    h1 { margin: 4px 0; font-size: 1.3rem; }
+    h2 { font-size: 1rem; margin: 20px 0 8px; }
+    h3 { font-size: 0.95rem; margin: 14px 0 6px; }
+    p { margin: 6px 0; }
+    .sub, .note { color: #6b6354; font-size: 0.9rem; }
+    a { color: #2f5d8a; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+    .layout { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1000px) { .layout { grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); } }
+    button {
+      font: inherit;
+      padding: 7px 12px;
+      border: 1px solid #b8ab8f;
+      border-radius: 8px;
+      background: #fffdf7;
+      color: #2b2620;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    button[aria-pressed='true'] { background: #2b2620; color: #fffdf7; border-color: #2b2620; }
+    input[type='text'], input[type='search'] {
+      font: inherit;
+      padding: 6px 8px;
+      border: 1px solid #b8ab8f;
+      border-radius: 6px;
+      background: #fffdf7;
+      color: #2b2620;
+    }
+    .card {
+      background: #fffdf7;
+      border: 1px solid #e0d6bf;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin: 8px 0;
+    }
+    button.kid { display: block; width: 100%; text-align: left; margin: 4px 0; }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-size: 0.78rem;
+      border: 1px solid #c9a227;
+      background: #fdf3d3;
+      color: #6b5200;
+      margin-left: 6px;
+    }
+    .badge.quiet { border-color: #cfc7b4; background: #f2ece0; color: #6b6354; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #ece4d3; white-space: nowrap; }
+    th { color: #6b6354; font-weight: 600; }
+    td.hit { color: #2f7d32; }
+    td.miss { color: #a33; }
+    pre {
+      background: #f7f2e6;
+      border: 1px solid #e6dcc6;
+      border-radius: 8px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      margin: 6px 0;
+    }
+    #status { min-height: 1.4em; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>The Educator's Window</h1>
+    <p class="sub">
+      What the kid never sees: the flags, their evidence, how much they are leaning on
+      the coach, and the builds waiting for a grown-up. The prestige stats — calibration
+      and streak — are the kid's own and are shown to them in the game.
+    </p>
+    <p class="sub">
+      No sign-in: this page is kitchen-table trust on one machine, and
+      <strong>REVISIT before any classroom</strong>. The game:
+      <a href="./index.html">Will It Break</a> · <a href="./portal.html">Costume Portal</a>
+    </p>
+    <div id="status"></div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>This device's player</h2>
+      <div class="row">
+        <label for="kidname">Who is playing here:</label>
+        <input id="kidname" type="text" maxlength="40" placeholder="a name" />
+        <button id="savekid">Name them</button>
+        <button id="reader">This kid reads and writes</button>
+      </div>
+      <p class="note" id="readernote"></p>
+    </section>
+
+    <div class="layout">
+      <section>
+        <h2>Kids <button id="refresh">Look again</button></h2>
+        <div id="kids"></div>
+      </section>
+      <section>
+        <h2 id="whose">Pick a kid</h2>
+        <div id="kidview"></div>
+      </section>
+    </div>
+
+    <section>
+      <h2>Builds waiting for you</h2>
+      <p class="note">
+        Builds the coach doubted belong on a shared shelf. The kid already has the thing in
+        their own scene — this decides only whether every other kid's coach may grab it.
+      </p>
+      <div id="pending"></div>
+    </section>
+
+    <section>
+      <h2>The coaches' library</h2>
+      <div class="row">
+        <input id="q" type="search" placeholder="search the shelf…" />
+        <button id="search">Search</button>
+        <button id="listall">Show all</button>
+      </div>
+      <div id="library"></div>
+    </section>
+  </main>
+  <script type="module" src="./educator.js"></script>
+</body>
+</html>

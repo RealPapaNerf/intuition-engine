@@ -220,8 +220,9 @@ export function makeHandler({
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   createServer(makeHandler({ root })).listen(8123, () => {
-    console.log('Frog bridge demo: http://localhost:8123/demo/index.html');
-    console.log('Costume portal:   http://localhost:8123/demo/portal.html');
+    console.log('Frog bridge demo:  http://localhost:8123/demo/index.html');
+    console.log('Costume portal:    http://localhost:8123/demo/portal.html');
+    console.log('Educator’s window: http://localhost:8123/demo/educator.html');
     console.log(
       process.env.ANTHROPIC_API_KEY
         ? 'The coach is in (ANTHROPIC_API_KEY is set), capped per kid per day.'
