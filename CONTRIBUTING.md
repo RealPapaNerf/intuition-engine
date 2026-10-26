@@ -44,6 +44,23 @@ not style preferences. The full statements live in `CLAUDE.md` and
 - **Score the goal, never the method.** Sim-breaking is a badge, not
   cheating.
 
+## How this project is governed
+
+This project is vision-led. `docs/philosophy.md` is the constitution;
+the dated files in `docs/decisions/` amend it; the maintainer is their
+steward and has the final word on what fits. That is deliberate: the
+product here is a small set of load-bearing invariants, strictly kept —
+not a thick rulebook — and committees are how thick rulebooks happen.
+
+Disagreement is welcome, argued in writing against the philosophy, in
+issues and decision-file PRs. The best contributions so far at any
+given moment will be the ones that read the philosophy and push on it
+from the inside. And if you want this to become something the
+philosophy rules out, the MIT license is your friend: fork it and
+build your version. That is not a hostile act here — solving the
+problem a way the original author never imagined is literally
+invariant 4.
+
 ## How changes are decided
 
 Design decisions live in `docs/decisions/` as dated files, append-only.
