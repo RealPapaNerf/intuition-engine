@@ -22,7 +22,11 @@
 
 import {
   SPAN_GAP,
+  MATERIALS,
   validateSkin,
+  applyGrant,
+  replayGrants,
+  validateGrant,
   makeBlueprint,
   checkLink,
   addLink,
@@ -31,6 +35,8 @@ import {
   isHeld,
   inBounds,
   antsLeft,
+  stockLeft,
+  fixtureLinks,
   pruneLoose,
   linkKey,
   pointKey,
@@ -56,6 +62,8 @@ import {
   ty,
   fromPx,
   drawScene,
+  drawMaterialLink,
+  drawGenericCargo,
   drawGrid,
   drawRoute,
   drawRing,
@@ -63,6 +71,8 @@ import {
   drawLink,
   drawJoints,
   drawCargo,
+  cargoPx,
+  genericCargoPx,
   spawnDebris,
   stepDebris,
   drawDebris,
@@ -71,9 +81,23 @@ import {
   restingLink,
 } from './render.js';
 import { writeCredits } from './credits.js';
+import {
+  cargoDress,
+  cargoIndexOf,
+  collidingLinks,
+  shedRemovable,
+  worldMembers,
+} from './variant.js';
 
-const LEVEL = SPAN_GAP;
-const COSTUMES = SKINS.map((s) => validateSkin(s, LEVEL)); // a bad skin fails loudly, here
+// The archetype is the base; the level in play may be a variant of it —
+// the base plus the grants the coach has given, frozen, with its own id
+// (decisions 2026-10-25 §2). Everything honest about the game comes from
+// LEVEL; everything a costume is checked against comes from BASE, because
+// a skin dresses the archetype and never the grants (§6: a skin validates
+// against the base, and granted cargo renders generically).
+const BASE = SPAN_GAP;
+let LEVEL = BASE;
+const COSTUMES = SKINS.map((s) => validateSkin(s, BASE)); // a bad skin fails loudly, here
 const SLOW_MO_FRAMES = 75; // after the first snap, the fall plays at quarter speed
 const RESULT_DELAY = 70; // frames of falling before the verdict is read out
 const SHED_EVERY = 20; // frames between links letting go
@@ -82,7 +106,7 @@ const BANNER_FRAMES = 160; // how long "the costume changed" stays up
 const GRAB = 0.032; // m: how close to a dot counts as on it
 const TAP = 0.022; // m: how close to a link counts as tapping it
 const FINGER = 18; // px on screen: neither may shrink below a fingertip
-const SCALE = LEVEL.measure; // the archetype's frozen instrument
+const SCALE = BASE.measure; // the archetype's frozen instrument — a variant keeps it
 const SCALE_G = Math.round(SCALE.max * 1000);
 const RES_G = Math.round(SCALE.resolution * 1000);
 const MEASURE_BUDGET_MS = 10; // the scale's thinking time per frame
@@ -105,6 +129,7 @@ let tap = null; // a tap that may send a link home: { link, x, y }
 let pointer = null; // world position under the mouse, for hover hints
 let notice = null; // a placement refusal to show while dragging
 let skin = COSTUMES[0];
+let stockPick = null; // the granted material the next link is made of; null = the jar's own
 let numbers = false; // the educator's view: every link's pull, in numbers
 let banner = 0; // frames left on "the costume changed"
 const debris = []; // pictures of links that let go, on their way down
@@ -132,12 +157,14 @@ function saveJournal() {
 }
 
 // A stored design is replayed through the placement rules, in as many
-// passes as it takes, so nothing invalid ever reaches the model.
+// passes as it takes, so nothing invalid ever reaches the model. A
+// link's material tag comes back with it: granted stock is budgeted
+// apart from the jar (decisions 2026-10-25 §2).
 function replay(links) {
   const bp = makeBlueprint();
   let pending = Array.isArray(links) ? links : [];
   for (;;) {
-    const left = pending.filter(([p, q]) => addLink(LEVEL, bp, p, q) !== null);
+    const left = pending.filter(([p, q, mat]) => addLink(LEVEL, bp, p, q, mat ?? null) !== null);
     if (left.length === pending.length) return bp;
     pending = left;
   }
@@ -167,7 +194,7 @@ function loadCostumes() {
       continue;
     }
     try {
-      next.set(id, [text, validateSkin(s, LEVEL)]);
+      next.set(id, [text, validateSkin(s, BASE)]);
     } catch (e) {
       console.warn(`A saved costume was left out. ${e.message}`);
     }
@@ -176,6 +203,20 @@ function loadCostumes() {
   costumes = [...COSTUMES, ...[...made.values()].map(([, c]) => c)];
 }
 loadCostumes();
+
+// The grants the coach has given, kept as the ordered list the engine
+// replays (never a level object): a reload comes back to the same
+// variant, so the branch the kid was granted is still there and their
+// links still have it to hold (decisions 2026-10-25 §2). A stored list
+// that no longer replays is dropped whole — the base level always plays.
+const GRANTS = 'willitbreak-grants';
+try {
+  const stored = JSON.parse(localStorage.getItem(GRANTS));
+  if (Array.isArray(stored) && stored.length > 0) LEVEL = replayGrants(BASE.id, stored);
+} catch (e) {
+  console.warn(`The granted things could not be set out again. ${e.message}`);
+  LEVEL = BASE;
+}
 
 try {
   design = replay(JSON.parse(localStorage.getItem('willitbreak-design'))?.links);
@@ -194,6 +235,7 @@ function save(key, value) {
   }
 }
 const saveDesign = () => save('willitbreak-design', design);
+const saveGrants = () => save(GRANTS, LEVEL.grants ?? []);
 const saveView = () => save('willitbreak-view', { skin: skin.id, numbers, mode });
 
 // A prediction is only a prediction if the kid hasn't seen that exact
@@ -225,8 +267,30 @@ const w = () => skin.words;
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const an = (s) => `${/^[aeiou]/i.test(s) ? 'an' : 'a'} ${s}`;
 const some = (n) => `${n} ${n === 1 ? w().link : w().links}`;
+const stockWord = (mat) => mat ?? w().link;
+
+// What is left of each granted material (decisions 2026-10-25 §2):
+// stock is budgeted apart from the jar, and the kid can see both.
+function stockText() {
+  return Object.keys(LEVEL.stock ?? {})
+    .map((n) => `${n}: ${stockLeft(LEVEL, design, n)}`)
+    .join(' · ');
+}
+
+// Which picture dresses which rung of the cargo ladder — recomputed
+// whenever a grant grows the ladder. A granted creature has no picture
+// (costume null) and is drawn generically, by name (decisions
+// 2026-10-25 §6).
+let dress = cargoDress(LEVEL, BASE);
+function rung(i) {
+  return dress[i] ?? dress[0];
+}
+function rungName(i = frogIndex) {
+  const d = rung(i);
+  return d.costume === null ? d.name : skin.cargo[d.costume].name;
+}
 function cargoName() {
-  return `${skin.cargo[frogIndex].name} (${Math.round(LEVEL.cargo[frogIndex] * 1000)} g)`;
+  return `${rungName()} (${Math.round(LEVEL.cargo[frogIndex] * 1000)} g)`;
 }
 
 function say(words) {
@@ -258,8 +322,11 @@ function relabel() {
 
 // --- Building ------------------------------------------------------------
 
+// Undo keeps the material tag: a plank put back is a plank, and the
+// stock it was paid from is what it goes back to (decisions 2026-10-25
+// §7.3).
 function snapshot() {
-  return design.links.map(([p, q]) => [[...p], [...q]]);
+  return design.links.map(([p, q, mat]) => (mat ? [[...p], [...q], mat] : [[...p], [...q]]));
 }
 function pushUndo(links) {
   history.push(links);
@@ -301,6 +368,8 @@ function linkAt(x, y) {
 }
 
 const REFUSALS = {
+  'no-stock': () => `That is all the ${stockWord(stockPick)} there is. Ask the coach for more, or build with ${w().links}.`,
+  'unknown-material': () => `There is none of that to build with.`,
   'nothing-to-hold': () =>
     `${cap(w().links)} need something to hold: start from ${an(w().bank)}, ${an(w().support)}, or your bridge.`,
   'both-anchored': () =>
@@ -319,14 +388,14 @@ function layToward(q) {
       drag.at[1] + Math.sign(q[1] - drag.at[1]),
     ];
     if (!hasLink(design, drag.at, next)) {
-      const why = checkLink(LEVEL, design, drag.at, next);
+      const why = checkLink(LEVEL, design, drag.at, next, stockPick);
       if (why) {
         notice = REFUSALS[why] ?? null;
         if (notice) say(notice); // say so mid-drag
         return;
       }
       if (drag.placed === 0) pushUndo(drag.before);
-      addLink(LEVEL, design, drag.at, next);
+      addLink(LEVEL, design, drag.at, next, stockPick);
       drag.placed++;
     }
     drag.at = next;
@@ -435,6 +504,7 @@ function refresh(words = null) {
   $('shed').disabled = !(phase === 'result' && !measuring && run && run.crossing.outcome === 'holds' && !run.shed);
   $('build').disabled = phase !== 'result';
   $('frog').textContent = measuring ? `reads to ${SCALE_G} g` : cargoName();
+  stockButtons(); // the counts tick down as links go out
   if (words !== null) say(words);
   else if (building) say(buildPrompt);
 }
@@ -447,6 +517,64 @@ function toBuild(words = null) {
   refresh(words);
 }
 
+// --- What the coach grants -------------------------------------------------
+//
+// A grant stocks the world and never the bridge (decisions 2026-10-25
+// §2): it arrives between rounds, makes a new frozen variant of the
+// level, and the UI follows it. The one thing it may disturb of the
+// kid's is a link sitting exactly where an incoming fixture's members
+// go — those walk back to the jar, out loud (fixture library §4.7).
+// Nothing here decides an outcome, and the physics only ever hears
+// about it through the level the engine itself froze.
+function grantWords(grant, moved, stranded) {
+  const aside =
+    moved > 0
+      ? ` ${cap(some(moved))} moved aside — back in the ${w().jar}${
+          stranded > 0 ? `, with ${some(stranded)} that had nothing left to hold` : ''
+        }.`
+      : '';
+  switch (grant.kind) {
+    case 'cargo':
+      return () =>
+        `🎁 ${grant.name} is here — ${Math.round(LEVEL.cargo[cargoIndexOf(LEVEL, grant.mass)] * 1000)} g. ` +
+        `Use ${w().cargo} bigger and smaller to pick who crosses.${aside}`;
+    case 'links':
+      return () => `🎁 ${some(grant.count)} more in the ${w().jar}!${aside}`;
+    case 'stock':
+      return () =>
+        `🎁 ${grant.count} ${grant.material} to build with. Pick ${grant.material} under “Build with”, then drag.${aside}`;
+    case 'anchor':
+      return () =>
+        `🎁 ${grant.points.length} new ${grant.points.length === 1 ? 'place' : 'places'} to hold on — ` +
+        `start a line of ${w().links} there.${aside}`;
+    case 'fixture':
+      return () =>
+        `🎁 A ${grant.name} is out there now. Your ${w().links} can hold onto it — and it can break too.${aside}`;
+    default:
+      return () => `🎁 Something new is in the world.${aside}`;
+  }
+}
+
+// Take a grant into the world. Returns why not, or null when it landed.
+function receiveGrant(grant) {
+  const why = validateGrant(LEVEL, grant);
+  if (why) return why;
+  const moved = grant.kind === 'fixture' ? collidingLinks(design, grant.members) : [];
+  for (const [p, q] of moved) removeLink(design, p, q);
+  const stranded = moved.length > 0 ? pruneLoose(LEVEL, design).length : 0;
+  const was = LEVEL.cargo[frogIndex];
+  LEVEL = applyGrant(LEVEL, grant);
+  dress = cargoDress(LEVEL, BASE);
+  frogIndex = cargoIndexOf(LEVEL, was);
+  if (stockPick !== null && !(LEVEL.stock?.[stockPick] > 0)) stockPick = null;
+  saveGrants();
+  if (moved.length > 0) saveDesign();
+  stockButtons();
+  relabel();
+  toBuild(grantWords(grant, moved.length, stranded));
+  return null;
+}
+
 function startRun(cargoMass) {
   const built = buildModel(LEVEL, design);
   const route = findRoute(LEVEL, design);
@@ -455,6 +583,9 @@ function startRun(cargoMass) {
   run = {
     ...built,
     route,
+    // The world's own members: scenery to draw as what it is made of
+    // (decisions 2026-10-25, the fixture library §4.6).
+    worldSet: worldMembers(built),
     seedOf, // each link moves as itself, in build mode and test alike
     crossing: makeCrossing(built.model, {
       route: route.map((p) => built.nodeOf.get(pointKey(p))),
@@ -681,7 +812,8 @@ function startShed() {
   );
   run.shed = {
     steps: shedSteps(plan.model, {
-      removable: (m) => !walkway.has(m),
+      // The walkway stays, and so does the world (fixture library §4.8).
+      removable: shedRemovable(plan, walkway),
       ...cases,
       settleOpts: { maxSteps: 30000 },
     }),
@@ -762,7 +894,11 @@ function tick() {
     const substeps = slow ? 6 : run.crossing.timing.substeps;
     const broke = advanceCrossing(run.crossing, { substeps });
     for (const m of broke) {
-      spawnDebris(debris, LEVEL, skin, m, { seed: run.seedOf.get(m) ?? 0 });
+      // The costume's pictures are the costume's: a snapped plank or a
+      // granted branch is not a shower of ants, so it simply goes.
+      if (m.material === LEVEL.material && !run.worldSet.has(m)) {
+        spawnDebris(debris, LEVEL, skin, m, { seed: run.seedOf.get(m) ?? 0 });
+      }
     }
     if (broke.length > 0 && !run.snap) {
       // Pin where the failure started; the pieces will fall away from it.
@@ -793,8 +929,17 @@ function drawBlueprint(t) {
   const route = findRoute(LEVEL, design);
   if (route) drawRoute(ctx, LEVEL, route);
 
-  for (const [p, q] of design.links) {
-    drawLink(ctx, LEVEL, skin, restingLink(LEVEL, p, q), { t, seed: hash(linkKey(p, q)) });
+  // The world first, under everything: whatever the coach has built out
+  // there, drawn as the material it is made of.
+  for (const [p, q, mat] of fixtureLinks(LEVEL)) {
+    drawMaterialLink(ctx, LEVEL, restingLink(LEVEL, p, q, mat), { world: true });
+  }
+  for (const [p, q, mat] of design.links) {
+    const m = restingLink(LEVEL, p, q, mat);
+    // A link of granted stock is not the material any costume was
+    // authored for, so it wears its own (coach arrives §7.3).
+    if (mat) drawMaterialLink(ctx, LEVEL, m);
+    else drawLink(ctx, LEVEL, skin, m, { t, seed: hash(linkKey(p, q)) });
   }
   const joints = new Map();
   for (const [p, q] of design.links) {
@@ -824,15 +969,17 @@ function drawTest(t) {
   // pulled while the cargo crossed: that is where the load went.
   const showPeak = c.outcome === 'holds';
   const members = activeMembers(run.model);
+  const heatOf = (m) => (showPeak ? c.peak.get(m) ?? 0 : undefined);
   for (const m of members) {
-    drawLink(ctx, LEVEL, skin, m, {
-      t,
-      seed: run.seedOf.get(m) ?? 0,
-      heat: showPeak ? c.peak.get(m) ?? 0 : undefined,
-    });
+    if (run.worldSet.has(m)) drawMaterialLink(ctx, LEVEL, m, { heat: heatOf(m), world: true });
   }
   const joints = new Set();
-  for (const m of members) joints.add(m.a).add(m.b);
+  for (const m of members) {
+    if (run.worldSet.has(m)) continue;
+    if (m.material !== LEVEL.material) drawMaterialLink(ctx, LEVEL, m, { heat: heatOf(m) });
+    else drawLink(ctx, LEVEL, skin, m, { t, seed: run.seedOf.get(m) ?? 0, heat: heatOf(m) });
+    joints.add(m.a).add(m.b);
+  }
   drawJoints(ctx, LEVEL, skin, joints);
   drawDebris(ctx, LEVEL, skin, debris);
   if (run.snap) {
@@ -850,6 +997,21 @@ function displayFrogIndex() {
     if (LEVEL.cargo[k] <= run.crossing.cargoMass) i = k;
   }
   return i;
+}
+
+// The cargo on stage: a base rung in its costume, a granted creature
+// generically, by name (decisions 2026-10-25 §6). BASE is handed to the
+// renderer on purpose — on a variant a costume's pictures and the
+// level's cargo ladder no longer share an index (demo/variant.js), and
+// every size stays measured off the archetype's lightest rung.
+function showCargo(i, pos) {
+  const d = rung(i);
+  if (d.costume === null) drawGenericCargo(ctx, BASE, skin, d, pos);
+  else drawCargo(ctx, BASE, skin, d.costume, pos);
+}
+function cargoPxOf(i) {
+  const d = rung(i);
+  return d.costume === null ? genericCargoPx(BASE, d.mass) : cargoPx(BASE, skin, d.costume);
 }
 
 function cargoAt() {
@@ -873,13 +1035,18 @@ function draw() {
   if (phase === 'build' || phase === 'measuring') drawBlueprint(t);
   else drawTest(t);
   const pos = cargoAt();
-  drawCargo(ctx, LEVEL, skin, displayFrogIndex(), pos);
+  const shown = displayFrogIndex();
+  showCargo(shown, pos);
 
   if (numbers) {
     const c = run?.crossing;
     const members = run ? activeMembers(run.model) : [];
     const valueOf = (m) => (c.outcome === 'holds' ? c.peak.get(m) ?? 0 : utilization(m));
-    drawNumbers(ctx, LEVEL, skin, members, valueOf, { index: displayFrogIndex(), pos });
+    drawNumbers(ctx, LEVEL, skin, members, valueOf, {
+      pos,
+      grams: Math.round(LEVEL.cargo[shown] * 1000),
+      px: cargoPxOf(shown),
+    });
   }
   if (banner > 0) {
     drawCaption(ctx, LEVEL, skin, 'The costume changed. The physics didn’t.', Math.min(1, banner / 30));
@@ -893,10 +1060,12 @@ function draw() {
     $('working').textContent = design.links.length;
     $('jar').textContent = antsLeft(LEVEL, design);
     $('maxu').textContent = '—';
+    $('stockbox').textContent = stockText();
   } else {
     $('working').textContent = activeMembers(run.model).length;
     $('jar').textContent = antsLeft(LEVEL, design) + (run.shed ? run.shed.freed.length : 0);
     $('maxu').textContent = `${Math.round(run.crossing.peakUtilization * 100)}%`;
+    $('stockbox').textContent = stockText();
   }
   const cal = calibration(journal);
   $('calib').textContent = cal.total === 0 ? '—' : `${cal.hits}/${cal.total} right · streak ${cal.streak}`;
@@ -963,6 +1132,38 @@ function wear(s) {
   saveView();
   relabel();
 }
+// Build with: the jar's own creatures, or a granted stash. The picker
+// only exists once something has been granted to build with (coach
+// arrives §7.3).
+function stockButtons() {
+  const row = $('stockrow');
+  for (const b of row.querySelectorAll('[data-mat]')) b.remove();
+  const names = Object.keys(LEVEL.stock ?? {});
+  row.hidden = names.length === 0;
+  if (names.length === 0) {
+    stockPick = null;
+    return;
+  }
+  for (const mat of [null, ...names]) {
+    const b = document.createElement('button');
+    b.dataset.mat = mat ?? '';
+    b.textContent = mat
+      ? `${mat} (${stockLeft(LEVEL, design, mat)})`
+      : `${cap(w().links)} (${antsLeft(LEVEL, design)})`;
+    b.setAttribute('aria-pressed', String(mat === stockPick));
+    b.onclick = () => {
+      stockPick = mat;
+      stockButtons();
+      refresh(() =>
+        mat === null
+          ? `Dragging lays ${w().links} from the ${w().jar}.`
+          : `Dragging lays ${mat}. ${cap(stockText())} left.`,
+      );
+    };
+    row.append(b);
+  }
+}
+
 function costumeButtons() {
   for (const b of document.querySelectorAll('[data-skin]')) b.remove();
   for (const s of costumes) {
@@ -974,6 +1175,7 @@ function costumeButtons() {
   }
 }
 costumeButtons();
+stockButtons();
 
 // The portal saves in another tab; its costumes arrive here as it does.
 // One being worn that was changed is put on again, and one deleted is

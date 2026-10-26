@@ -38,6 +38,7 @@
     }
     button:disabled { opacity: 0.5; cursor: default; }
     button[aria-pressed='true'] { background: #2b2620; color: #fffdf7; border-color: #2b2620; }
+    [hidden] { display: none !important; }
     .band { display: inline-flex; gap: 6px; align-items: center; }
     .band input {
       font: inherit;
@@ -85,6 +86,9 @@
     <button id="shed"></button>
     <button id="build">Build again</button>
   </div>
+  <div class="row" id="stockrow" hidden>
+    <span class="label">Build with:</span>
+  </div>
   <div class="row" id="skins">
     <span class="label">Costume:</span>
   </div>
@@ -92,6 +96,7 @@
     <span><span id="cargoWord"></span>: <b id="frog"></b></span>
     <span><span id="linksWord"></span> on the bridge: <b id="working">0</b></span>
     <span>In the <span id="jarWord"></span>: <b id="jar">0</b></span>
+    <span><b id="stockbox"></b></span>
     <span>Hardest <span id="linkWord"></span>: <b id="maxu">—</b></span>
     <span>Your calls: <b id="calib">—</b></span>
   </div>
