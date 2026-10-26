@@ -52,6 +52,42 @@
     .stats { display: flex; gap: 18px; font-size: 0.95rem; flex-wrap: wrap; justify-content: center; }
     .stats b { font-variant-numeric: tabular-nums; }
     #msg { min-height: 2.6em; font-weight: 600; text-align: center; max-width: 860px; }
+    .card {
+      max-width: 860px;
+      background: #fffdf7;
+      border: 1px solid #e0d6bf;
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .card p { margin: 0; text-align: center; }
+    #coachpanel {
+      max-width: 860px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    #coachsay { min-height: 1.6em; font-size: 1.05rem; font-weight: 600; text-align: center; }
+    #picks { gap: 10px; }
+    button.pick {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 86px;
+      padding: 8px 10px;
+      line-height: 1.1;
+    }
+    .picon { font-size: 1.9rem; }
+    .plabel { font-size: 0.8rem; color: #6b6354; }
+    #asktext { font: inherit; padding: 8px 10px; border: 1px solid #b8ab8f; border-radius: 8px; background: #fffdf7; color: #2b2620; min-width: 18em; }
+    .note { font-size: 0.85rem; color: #6b6354; text-align: center; max-width: 860px; }
     .credit { margin: 0; font-size: 0.75rem; color: #8a8170; text-align: center; max-width: 860px; }
     .credit a { color: inherit; }
   </style>
@@ -62,6 +98,10 @@
     <span id="subtitle"></span><br />
     <strong>Say it before you see it</strong> — then physics decides.
   </p>
+  <div class="card" id="introcard">
+    <p id="introtext"></p>
+    <button id="readintro" hidden>🔊 Again</button>
+  </div>
   <canvas id="canvas" width="860" height="560"></canvas>
   <div class="row">
     <span class="label">Mode:</span>
@@ -101,6 +141,20 @@
     <span>Your calls: <b id="calib">—</b></span>
   </div>
   <div id="msg"></div>
+  <section id="coachpanel">
+    <div id="coachsay"></div>
+    <div class="row" id="picks"></div>
+    <div class="row">
+      <input id="asktext" type="text" maxlength="200" placeholder="Ask the coach for something…" />
+      <button id="askbtn">Ask</button>
+    </div>
+    <div class="row">
+      <button id="forestbtn">🌲 What’s in the forest?</button>
+      <button id="shelfbtn">📚 What’s already built?</button>
+    </div>
+    <div id="browseout" class="note"></div>
+    <div id="ticker" class="note"></div>
+  </section>
   <p class="credit" id="credit"></p>
   <p class="credit">The other pack's playable: <a href="./lens.html">The Lens</a> — negotiation practice with a coach in your eye line.</p>
   <script type="module" src="./main.js"></script>

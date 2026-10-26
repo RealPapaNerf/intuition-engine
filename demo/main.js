@@ -81,6 +81,8 @@ import {
   restingLink,
 } from './render.js';
 import { writeCredits } from './credits.js';
+import { makeVoice } from './speak.js';
+import { makeCoachBox } from './coachbox.js';
 import {
   cargoDress,
   cargoIndexOf,
@@ -111,6 +113,32 @@ const SCALE_G = Math.round(SCALE.max * 1000);
 const RES_G = Math.round(SCALE.resolution * 1000);
 const MEASURE_BUDGET_MS = 10; // the scale's thinking time per frame
 
+// Who is playing: the educator's window names them (demo/educator.html),
+// and the name is what the coach's budgets and the adult's view are
+// keyed on. The kid's page never asks for it — a pre-reader cannot type
+// one (questions §5).
+const KID = 'willitbreak-kid';
+const READER = 'willitbreak-reader'; // the educator's per-kid reader toggle
+const readKid = () => {
+  try {
+    return localStorage.getItem(KID) || 'friend';
+  } catch {
+    return 'friend';
+  }
+};
+// Spoken-first until an adult says the kid reads and writes: the game
+// must work before reading does (questions §5).
+const readsNow = () => {
+  try {
+    return localStorage.getItem(READER) === 'true';
+  } catch {
+    return false;
+  }
+};
+let kid = readKid();
+let spoken = !readsNow();
+const voice = makeVoice({ enabled: spoken });
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const $ = (id) => document.getElementById(id);
@@ -134,6 +162,8 @@ let numbers = false; // the educator's view: every link's pull, in numbers
 let banner = 0; // frames left on "the costume changed"
 const debris = []; // pictures of links that let go, on their way down
 let message = () => ''; // the message line, as words to re-say in any skin
+let lastOutcome = null; // what happened last round, in a word, for the coach
+let coach = null; // the coach's box, wired up once the page is here
 
 // --- Storage: per-viewer conveniences, wrapped; fine without them -------
 
@@ -151,6 +181,21 @@ try {
 function saveJournal() {
   try {
     localStorage.setItem('willitbreak-journal', JSON.stringify(journal.entries.slice(-200)));
+  } catch {
+    /* fine */
+  }
+}
+
+// The educator's window hears what the kid committed to (decisions
+// 2026-10-25 §5). It decides nothing here, and the game plays on with
+// nobody listening — a kitchen table with no server is still a game.
+function logEntry(entry) {
+  try {
+    fetch('/educator/log', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kid, entries: [entry] }),
+    }).catch(() => {});
   } catch {
     /* fine */
   }
@@ -293,9 +338,17 @@ function cargoName() {
   return `${rungName()} (${Math.round(LEVEL.cargo[frogIndex] * 1000)} g)`;
 }
 
+let spokenLine = null; // the last line read aloud, so it is not re-read
 function say(words) {
   message = words;
-  $('msg').textContent = words();
+  const text = words();
+  $('msg').textContent = text;
+  // In spoken mode the line is read as it changes — queued behind
+  // whatever is already being said, never cutting the coach off.
+  if (text !== spokenLine) {
+    spokenLine = text;
+    voice.say(text, { interrupt: false });
+  }
 }
 
 // Everything on the page that names a thing, in the current costume.
@@ -503,6 +556,10 @@ function refresh(words = null) {
   // fixed cargo, not the scale's reading.
   $('shed').disabled = !(phase === 'result' && !measuring && run && run.crossing.outcome === 'holds' && !run.shed);
   $('build').disabled = phase !== 'result';
+  // Asking is a between-rounds thing: a grant lands in the world, and
+  // the world does not change under a cargo mid-crossing (fixture
+  // library §4.6).
+  coach?.setOpen(building || phase === 'result');
   $('frog').textContent = measuring ? `reads to ${SCALE_G} g` : cargoName();
   stockButtons(); // the counts tick down as links go out
   if (words !== null) say(words);
@@ -514,6 +571,8 @@ function toBuild(words = null) {
   run = null;
   measure = null;
   debris.length = 0;
+  voice.hush(); // a new round starts quiet
+  spokenLine = null;
   refresh(words);
 }
 
@@ -537,7 +596,7 @@ function grantWords(grant, moved, stranded) {
     case 'cargo':
       return () =>
         `🎁 ${grant.name} is here — ${Math.round(LEVEL.cargo[cargoIndexOf(LEVEL, grant.mass)] * 1000)} g. ` +
-        `Use ${w().cargo} bigger and smaller to pick who crosses.${aside}`;
+        `Tap “Bigger ${w().cargo}” to pick who crosses.${aside}`;
     case 'links':
       return () => `🎁 ${some(grant.count)} more in the ${w().jar}!${aside}`;
     case 'stock':
@@ -735,7 +794,8 @@ function finishMeasureRound() {
   const gRead = Math.round(mass * 1000);
   const { lo, hi } = measure.band;
   const setup = setupKey();
-  record(journal, {
+  lastOutcome = heldAny ? `${gRead} g` : 'carried nothing';
+  const entry = record(journal, {
     level: levelId(),
     kind: 'band',
     prediction: { lo, hi },
@@ -750,6 +810,7 @@ function finishMeasureRound() {
     at: Date.now(),
   });
   saveJournal();
+  logEntry(entry);
   seen.add(setup);
   phase = 'result';
   refresh(bandVerdictWords({ hit: gRead >= lo && gRead <= hi, gRead, maxed, heldAny, lo, hi }));
@@ -763,7 +824,8 @@ function finishRound() {
   const c = run.crossing;
   const actual = c.outcome === 'holds' ? 'holds' : 'breaks';
   const setup = setupKey();
-  record(journal, {
+  lastOutcome = c.outcome;
+  const entry = record(journal, {
     level: levelId(),
     kind: 'binary',
     prediction,
@@ -777,6 +839,7 @@ function finishRound() {
     at: Date.now(),
   });
   saveJournal();
+  logEntry(entry);
   seen.add(setup);
 
   const v = {
@@ -1123,6 +1186,61 @@ numbersButton.onclick = () => {
 };
 $('skins').append(numbersButton);
 
+// --- The coach, the intro, and reading aloud -------------------------------
+
+// What the coach may be told: only what the kid can see. The service
+// whitelists this again on its side and replays the level from the
+// grant list, so nothing here is taken on faith — and adult-only flags
+// never enter the conversation (decisions 2026-10-25 §3).
+function coachState() {
+  const cal = calibration(journal);
+  return {
+    base: LEVEL.base ?? LEVEL.id,
+    grants: LEVEL.grants ?? [],
+    mode,
+    cargoGrams: Math.round(LEVEL.cargo[frogIndex] * 1000),
+    linksPlaced: design.links.length,
+    lastOutcome,
+    spoken,
+    calibration: { total: cal.total, hits: cal.hits, streak: cal.streak },
+  };
+}
+
+coach = makeCoachBox({
+  els: {
+    say: $('coachsay'),
+    text: $('asktext'),
+    ask: $('askbtn'),
+    picks: $('picks'),
+    forest: $('forestbtn'),
+    shelf: $('shelfbtn'),
+    browseout: $('browseout'),
+    ticker: $('ticker'),
+  },
+  kid,
+  getState: coachState,
+  grant: receiveGrant,
+  speak: (text) => voice.say(text),
+});
+
+// The problem introduces itself (questions §6): canned words of ours —
+// free, honest, the same every time, never the model's. Read aloud in
+// spoken mode, shown as text otherwise; it sets the scene and the goal
+// and never hints at a solution.
+function showIntro() {
+  $('introtext').textContent = LEVEL.intro ?? '';
+  $('introcard').hidden = !LEVEL.intro;
+  $('readintro').hidden = !spoken;
+}
+$('readintro').onclick = () => voice.say(LEVEL.intro);
+
+function setSpoken(on) {
+  spoken = on;
+  voice.setEnabled(on);
+  coach.setSpoken(on);
+  showIntro();
+}
+
 // The costumes: any time, mid-crossing included. The physics never
 // hears about it.
 function wear(s) {
@@ -1193,6 +1311,20 @@ addEventListener('storage', (e) => {
   relabel();
 });
 
+// The educator's window flips the reader toggle and names the player in
+// another tab; both arrive here as they happen (same device, same
+// origin — the portal's precedent).
+addEventListener('storage', (e) => {
+  if (e.key === READER || e.key === null) setSpoken(!readsNow());
+  if (e.key === KID || e.key === null) {
+    kid = readKid();
+    coach.setKid(kid);
+  }
+});
+
+setSpoken(spoken);
+showIntro();
+voice.say(LEVEL.intro); // silent unless spoken mode is on
 toBuild();
 relabel();
 tick();
