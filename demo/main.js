@@ -53,6 +53,7 @@ import {
   record,
   calibration,
   makeLadder,
+  consult,
   STRAIN,
 } from '../engine/index.js';
 import { SKINS } from '../skins/index.js';
@@ -82,6 +83,7 @@ import {
 } from './render.js';
 import { writeCredits } from './credits.js';
 import { makeVoice } from './speak.js';
+import { claimWords, wrongKinds, caughtBy, postmortemWords, callWords } from './advice.js';
 import { makeCoachBox } from './coachbox.js';
 import {
   cargoDress,
@@ -164,6 +166,17 @@ const debris = []; // pictures of links that let go, on their way down
 let message = () => ''; // the message line, as words to re-say in any skin
 let lastOutcome = null; // what happened last round, in a word, for the coach
 let coach = null; // the coach's box, wired up once the page is here
+// The Consultant, which answers and is sometimes wrong (decisions
+// 2026-10-25 §4). The brief puts it at unit-3 depth and up; in the demo
+// the depth is the mode toggle (2026-10-24 §5), so it starts on when
+// the kid is measuring. Pressing the button pins the choice either way.
+let consultantPref; // true | false | undefined = follow the depth
+const consultantOn = () => consultantPref ?? mode === 'measure';
+let advice = null; // what it claims about the bridge on screen
+let adviceSeed = null; // the setup that claim is for, or is being worked out
+let trustCall = null; // the kid's separate commitment: trusted | doubted | deferred
+let round = null; // what it said and what the kid called, captured at the gate
+let heldLog = null; // an entry waiting on the postmortem before the adult hears
 
 // --- Storage: per-viewer conveniences, wrapped; fine without them -------
 
@@ -189,6 +202,15 @@ function saveJournal() {
 // The educator's window hears what the kid committed to (decisions
 // 2026-10-25 §5). It decides nothing here, and the game plays on with
 // nobody listening — a kitchen table with no server is still a game.
+// An entry whose postmortem is still open waits: the adult hears what
+// the kid committed to once the round is really finished.
+function settleLog() {
+  if (heldLog) {
+    logEntry(heldLog);
+    heldLog = null;
+  }
+}
+
 function logEntry(entry) {
   try {
     fetch('/educator/log', {
@@ -269,6 +291,7 @@ try {
   skin = costumes.find((s) => s.id === prefs.skin) ?? skin;
   numbers = prefs.numbers === true;
   mode = prefs.mode === 'measure' ? 'measure' : 'feel';
+  if (typeof prefs.consultant === 'boolean') consultantPref = prefs.consultant;
 } catch {
   /* start empty, in the first costume */
 }
@@ -281,7 +304,8 @@ function save(key, value) {
 }
 const saveDesign = () => save('willitbreak-design', design);
 const saveGrants = () => save(GRANTS, LEVEL.grants ?? []);
-const saveView = () => save('willitbreak-view', { skin: skin.id, numbers, mode });
+const saveView = () =>
+  save('willitbreak-view', { skin: skin.id, numbers, mode, consultant: consultantPref });
 
 // A prediction is only a prediction if the kid hasn't seen that exact
 // bridge carry that exact cargo — in any costume. Seen setups come back
@@ -535,6 +559,127 @@ function buildPrompt() {
     : `${cargoName()} wants to cross. Will your bridge hold? Say it before you see it.`;
 }
 
+// --- The Consultant ---------------------------------------------------------
+//
+// It computes the honest truth first — a real ladder, a real crossing —
+// then a seeded draw makes it wrong about one time in five, in a way
+// that can be caught by reasoning against reality. That is most of a
+// second of solving, so it runs in a worker and the game keeps drawing
+// (demo/consultant-worker.js). Same seed, same advice: there is no
+// rerolling for a nicer answer.
+
+let thinker = null;
+try {
+  thinker = new Worker(new URL('./consultant-worker.js', import.meta.url), { type: 'module' });
+  thinker.onmessage = ({ data }) => {
+    if (data?.id !== adviceSeed) return; // the bridge moved on; so did we
+    if (data.error) {
+      $('advice').textContent = '';
+      return;
+    }
+    advice = data.advice;
+    $('advice').textContent = claimWords(advice, { cargoName: cargoName() });
+    refresh();
+  };
+  thinker.onerror = () => {
+    thinker = null;
+  };
+} catch {
+  thinker = null; // no worker here: it thinks on the spot instead
+}
+
+function seedFor() {
+  return `${kid}:${levelId()}:${setupKey()}:${journal.entries.length}`;
+}
+
+function clearAdvice() {
+  advice = null;
+  adviceSeed = null;
+  trustCall = null;
+  $('advice').textContent = '';
+  for (const id of ['trust', 'doubt', 'verify']) $(id).setAttribute('aria-pressed', 'false');
+}
+
+function ensureAdvice() {
+  const seed = seedFor();
+  if (adviceSeed === seed) return;
+  clearAdvice();
+  adviceSeed = seed;
+  $('advice').textContent = '🤖 The Consultant is working it out…';
+  const job = {
+    id: seed,
+    base: LEVEL.base ?? LEVEL.id,
+    grants: LEVEL.grants ?? [],
+    links: design.links,
+    mode,
+    cargoIndex: frogIndex,
+    seed,
+  };
+  if (thinker) {
+    thinker.postMessage(job);
+    return;
+  }
+  // No worker: think here, which costs the frame but never the lesson.
+  try {
+    advice = consult({ level: LEVEL, design, mode, cargoIndex: frogIndex, seed });
+    $('advice').textContent = claimWords(advice, { cargoName: cargoName() });
+  } catch {
+    $('advice').textContent = '';
+  }
+}
+
+function setCall(call) {
+  if (!advice || trustCall !== null) return;
+  trustCall = call;
+  refresh();
+}
+$('trust').onclick = () => setCall('trusted');
+$('doubt').onclick = () => setCall('doubted');
+$('verify').onclick = () => setCall('deferred');
+$('consultant').onclick = () => {
+  consultantPref = !consultantOn();
+  saveView();
+  if (!consultantPref) clearAdvice();
+  refresh();
+};
+
+// After the test: what the kid called, and — when something was
+// planted — what kind of wrong it was. Naming the error is the scored
+// part (2026-10-19 §3): caught before the test, caught in the
+// postmortem, or not caught.
+function showPostmortem() {
+  const row = $('postmortem');
+  for (const b of row.querySelectorAll('[data-kind]')) b.remove();
+  const a = round?.advice;
+  const open = Boolean(a) && phase === 'result';
+  row.hidden = !open || !a.wrong || round.answered === true || round.call === 'doubted';
+  $('verdict').textContent = open
+    ? `${callWords(a, round.call)}${
+        a.wrong && !row.hidden ? '' : ` ${postmortemWords(a, round.pick ?? null)}`
+      }`.trim()
+    : '';
+  if (row.hidden) return;
+  for (const k of wrongKinds(mode)) {
+    const b = document.createElement('button');
+    b.dataset.kind = k.id;
+    b.textContent = k.label;
+    b.onclick = () => answerPostmortem(k.id);
+    row.append(b);
+  }
+}
+
+function answerPostmortem(pick) {
+  if (!round?.advice || round.answered) return;
+  round.pick = pick;
+  round.answered = true;
+  if (round.entry?.consultant) {
+    round.entry.consultant.caught = caughtBy(round.advice, pick, round.call);
+  }
+  saveJournal();
+  settleLog();
+  showPostmortem();
+}
+
 // Buttons follow the phase; the message is whatever just happened (as
 // words to say in any skin), or the build prompt.
 function refresh(words = null) {
@@ -549,9 +694,23 @@ function refresh(words = null) {
   $('holds').style.display = measuring ? 'none' : '';
   $('breaks').style.display = measuring ? 'none' : '';
   $('bandbox').style.display = measuring ? '' : 'none';
-  $('holds').disabled = !callable;
-  $('breaks').disabled = !callable;
-  $('lockband').disabled = !callable;
+  // The Consultant speaks before the gate, and the kid commits to a
+  // call on it before they may commit to their own prediction — two
+  // separate commitments, in that order (the brief; 2026-10-19 §4).
+  const asking = consultantOn() && building && callable;
+  $('consultant').setAttribute('aria-pressed', String(consultantOn()));
+  $('consultantpanel').hidden = !(asking || (consultantOn() && phase === 'result' && round?.advice));
+  $('trustrow').hidden = !asking;
+  if (asking) ensureAdvice();
+  else if (building) clearAdvice();
+  for (const [id, c] of [['trust', 'trusted'], ['doubt', 'doubted'], ['verify', 'deferred']]) {
+    $(id).disabled = !asking || !advice || trustCall !== null;
+    $(id).setAttribute('aria-pressed', String(trustCall === c));
+  }
+  const gated = asking && trustCall === null;
+  $('holds').disabled = !callable || gated;
+  $('breaks').disabled = !callable || gated;
+  $('lockband').disabled = !callable || gated;
   // The shed stays a feel-mode move: its load cases are the frog ladder's
   // fixed cargo, not the scale's reading.
   $('shed').disabled = !(phase === 'result' && !measuring && run && run.crossing.outcome === 'holds' && !run.shed);
@@ -566,6 +725,26 @@ function refresh(words = null) {
   else if (building) say(buildPrompt);
 }
 
+// The kid's call on the Consultant, as the journal keeps it: whether a
+// wrongness was planted, what the kid committed to, and whether they
+// caught it. `caught` starts at its honest worst and is upgraded if the
+// postmortem names the error (2026-10-19 §3–4).
+function consultantField() {
+  if (!round?.advice) return null;
+  return {
+    wrong: round.advice.wrong,
+    call: round.call,
+    caught: caughtBy(round.advice, null, round.call),
+  };
+}
+
+// The adult hears once the round is really over: a planted error the
+// kid has not named yet still has a postmortem to come.
+function reportEntry(entry) {
+  if (round?.advice?.wrong && round.call !== 'doubted' && !round.answered) heldLog = entry;
+  else logEntry(entry);
+}
+
 function toBuild(words = null) {
   phase = 'build';
   run = null;
@@ -573,6 +752,10 @@ function toBuild(words = null) {
   debris.length = 0;
   voice.hush(); // a new round starts quiet
   spokenLine = null;
+  settleLog(); // a postmortem the kid walked away from still reports
+  round = null;
+  $('postmortem').hidden = true;
+  $('verdict').textContent = '';
   refresh(words);
 }
 
@@ -660,6 +843,9 @@ function startRun(cargoMass) {
 
 function predict(call) {
   prediction = call;
+  // What the Consultant said, and what the kid called on it, as they
+  // stood at the gate — the design may change before the postmortem.
+  round = advice ? { advice, call: trustCall, entry: null, answered: false } : null;
   startRun(LEVEL.cargo[frogIndex]);
   refresh(() => `You say it ${call === 'holds' ? 'HOLDS' : 'BREAKS'}. The scaffold comes away…`);
 }
@@ -682,6 +868,7 @@ function lockBand() {
     say(() => `The band needs two numbers: 0 to ${SCALE_G} g, low first.`);
     return;
   }
+  round = advice ? { advice, call: trustCall, entry: null, answered: false } : null;
   measure = {
     ladder: makeLadder(SCALE),
     band: { lo, hi },
@@ -802,18 +989,20 @@ function finishMeasureRound() {
     range: SCALE_G, // the scale's span: every band judged on one ruler
     outcome: gRead,
     buildFailed: !heldAny,
-    consultant: null,
+    consultant: consultantField(),
     // display metadata; the journal never reads these
     ants: design.links.length,
     setup,
     skin: skin.id,
     at: Date.now(),
   });
+  if (round) round.entry = entry;
   saveJournal();
-  logEntry(entry);
+  reportEntry(entry);
   seen.add(setup);
   phase = 'result';
   refresh(bandVerdictWords({ hit: gRead >= lo && gRead <= hi, gRead, maxed, heldAny, lo, hi }));
+  showPostmortem();
 }
 
 function finishRound() {
@@ -831,15 +1020,16 @@ function finishRound() {
     prediction,
     outcome: actual,
     buildFailed: actual === 'breaks',
-    consultant: null,
+    consultant: consultantField(),
     // display metadata; the journal never reads these
     ants: design.links.length,
     setup,
     skin: skin.id,
     at: Date.now(),
   });
+  if (round) round.entry = entry;
   saveJournal();
-  logEntry(entry);
+  reportEntry(entry);
   seen.add(setup);
 
   const v = {
@@ -856,6 +1046,7 @@ function finishRound() {
   }
   phase = 'result';
   refresh(verdictWords(v));
+  showPostmortem();
 }
 
 // The lazy colony, on the kid's own bridge: the links work out who the

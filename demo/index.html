@@ -74,6 +74,15 @@
       gap: 8px;
     }
     #coachsay { min-height: 1.6em; font-size: 1.05rem; font-weight: 600; text-align: center; }
+    #consultantpanel {
+      max-width: 860px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    #advice { font-size: 1.05rem; font-weight: 600; text-align: center; min-height: 1.4em; }
     #picks { gap: 10px; }
     button.pick {
       display: flex;
@@ -111,6 +120,7 @@
     <button id="bigger"></button>
     <button id="undo">Undo</button>
     <button id="clear">Clear</button>
+    <button id="consultant">🤖 Consultant</button>
   </div>
   <div class="row">
     <button id="holds">It HOLDS 💪</button>
@@ -140,6 +150,18 @@
     <span>Hardest <span id="linkWord"></span>: <b id="maxu">—</b></span>
     <span>Your calls: <b id="calib">—</b></span>
   </div>
+  <section id="consultantpanel" hidden>
+    <div id="advice"></div>
+    <div class="row" id="trustrow">
+      <button id="trust">Trust it 👍</button>
+      <button id="doubt">Doubt it 🤨</button>
+      <button id="verify">Can’t tell — run it 🔍</button>
+    </div>
+    <div class="row" id="postmortem" hidden>
+      <span class="label">What kind of wrong was it?</span>
+    </div>
+    <div id="verdict" class="note"></div>
+  </section>
   <div id="msg"></div>
   <section id="coachpanel">
     <div id="coachsay"></div>
