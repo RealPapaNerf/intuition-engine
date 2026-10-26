@@ -10,7 +10,7 @@ import { validateSystem } from './system.js';
 import { LIBRARY_DATA } from './library/index.js';
 
 export * from './system.js';
-export { runSystem, reading, normalsOf } from './solve.js';
+export { runSystem, reading, normalsOf, wiring } from './solve.js';
 export { KINDS, SAME_WITHIN, kindsFor, ask, commit, truthOf, score, jobOf, partName } from './questions.js';
 export { consult, WRONG_RATE, ANSWERS } from './consultant.js';
 export { mysteries, pickMystery, mysteryBench, probe } from './diagnose.js';

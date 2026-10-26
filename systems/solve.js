@@ -193,7 +193,40 @@ function assemble(system, bench) {
   }
   const rationed = nodes.map((_, i) => i).filter((i) => kind[i] === STORE && (consumers[i].length || producers[i].length));
 
-  return { system, nodes, parts: insts, instIx, present, broken, flows, gates, ratings, kind, capacity, max, here, A, L, nets, reacts, consumers, producers, rationed, nodeIx, flowIx };
+  return { system, nodes, parts: insts, instIx, present, broken, holder, flows, gates, ratings, kind, capacity, max, here, A, L, nets, reacts, consumers, producers, rationed, nodeIx, flowIx };
+}
+
+// The bench as the run will see it, without running anything: every
+// node and flow after copies, moves and blocks — for drawing it.
+export function wiring(system, bench = {}) {
+  const M = assemble(system, bench);
+  const nid = (i) => M.nodes[i].id;
+  return {
+    nodes: M.nodes.map((n, i) => ({
+      id: n.id,
+      name: n.name,
+      kind: n.kind,
+      substance: n.substance,
+      at: n.at,
+      here: !!M.here[i],
+      held: M.holder.has(n.id) ? M.parts[M.holder.get(n.id)].id : null,
+    })),
+    parts: M.parts.map((x, i) => ({ id: x.id, base: x.part.id, copy: x.copy, present: !!M.present[i], broken: !!M.broken[i] })),
+    flows: M.flows.map((f) => ({
+      id: f.id,
+      part: M.parts[f.part].id,
+      passive: f.passive,
+      oneway: !!f.oneway,
+      from: f.passive ? nid(f.a) : null,
+      to: f.passive ? nid(f.b) : null,
+      inputs: f.passive ? [] : f.ins.map(([n, k]) => [nid(n), k]),
+      outputs: f.passive ? [] : f.outs.map(([n, k]) => [nid(n), k]),
+      by: f.passive ? [] : f.by.map(nid),
+      needs: f.needs.map((n) => (n.part !== undefined ? { part: n.name } : { node: nid(n.node) })),
+      gates: f.gates.map((gi) => M.parts[M.gates[gi].part].id),
+      blocked: f.blocked,
+    })),
+  };
 }
 
 // Why a flow may not run right now, or null when it may. The reasons are

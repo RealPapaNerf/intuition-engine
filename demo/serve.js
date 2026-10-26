@@ -227,6 +227,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.log('Frog bridge demo:  http://localhost:8123/demo/index.html');
     console.log('Costume portal:    http://localhost:8123/demo/portal.html');
     console.log('Educator’s window: http://localhost:8123/demo/educator.html');
+    console.log('Pull It Apart:     http://localhost:8123/demo/apart.html');
+    console.log('The Workbench:     http://localhost:8123/demo/workbench.html');
     console.log(
       process.env.ANTHROPIC_API_KEY
         ? 'The coach is in (ANTHROPIC_API_KEY is set), capped per kid per day.'

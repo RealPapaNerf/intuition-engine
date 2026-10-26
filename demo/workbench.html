@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Workbench</title>
+  <style>
+    :root { --paper: #f4efe4; --ink: #2b2620; --dim: #6b6354; --line: #b8ab8f; --soft: #e0d6bf; --card: #fffdf7; --good: #2e8b57; --bad: #c0392b; --warn: #d98a1c; }
+    body { font-family: system-ui, sans-serif; background: var(--paper); color: var(--ink); margin: 0; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    h1 { margin: 4px 0 0; font-size: 1.3rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 8px; }
+    p.sub { margin: 0; color: var(--dim); font-size: 0.9rem; text-align: center; max-width: 860px; }
+    .wrap { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 12px; }
+    .card { background: var(--card); border: 1px solid var(--soft); border-radius: 10px; padding: 12px 14px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button { font: inherit; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button.primary { background: var(--ink); color: var(--card); border-color: var(--ink); font-weight: 600; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 380px; font: 12.5px/1.45 ui-monospace, Menlo, Consolas, monospace; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fffef9; color: var(--ink); }
+    .ok { color: var(--good); font-weight: 600; }
+    .err { color: var(--bad); font-weight: 600; white-space: pre-wrap; }
+    .warn { color: #8a5a00; }
+    .muted { color: var(--dim); font-size: 0.9rem; }
+    #stagescroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--soft); }
+    #diagram { width: 100%; min-width: 640px; height: auto; max-height: 60vh; display: block; background: var(--card); }
+    table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+    th, td { text-align: left; vertical-align: top; padding: 5px 8px 5px 0; border-bottom: 1px solid #efe7d6; }
+    th { color: var(--dim); font-weight: 600; }
+    td.works { color: var(--good); }
+    td.fails { color: var(--bad); }
+    .tablescroll { overflow-x: auto; }
+    pre.prompt { white-space: pre-wrap; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; background: #fffef9; border: 1px solid var(--soft); border-radius: 8px; padding: 10px; max-height: 320px; overflow: auto; }
+    details summary { cursor: pointer; font-weight: 600; }
+    label.tick { display: flex; gap: 8px; align-items: flex-start; }
+    label.tick input { margin-top: 4px; }
+    ul.saved { margin: 6px 0 0; padding-left: 18px; }
+    .credit { margin: 0; font-size: 0.75rem; color: #8a8170; text-align: center; }
+    .credit a { color: inherit; }
+    /* the diagram (shared with the kid's page) */
+    .board { fill: var(--card); }
+    .line { fill: none; stroke-linecap: round; opacity: 0.9; }
+    .line.idle { opacity: 0.22; }
+    .line.blocked { stroke-dasharray: 3 5; opacity: 0.5; }
+    .line.helper { stroke-width: 1.2; stroke-dasharray: 2 4; opacity: 0.6; }
+    .line.need { stroke-width: 1.2; stroke-dasharray: 1 5; opacity: 0.7; }
+    .line.gate { stroke-width: 1.4; stroke-dasharray: 6 4; opacity: 0.7; }
+    .line.faint { opacity: 0.15; }
+    .hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; }
+    .dot { pointer-events: none; }
+    .card-box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+    .out { opacity: 0.38; }
+    .out .card-box { stroke-dasharray: 5 4; }
+    .card-icon { font-size: 24px; text-anchor: middle; dominant-baseline: middle; }
+    .card-name { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+    .card-badge { font-size: 12px; text-anchor: end; fill: var(--dim); }
+    .bar { fill: #efe7d6; }
+    .bar-value { font-size: 9.5px; text-anchor: end; fill: var(--ink); }
+    .jar { fill: var(--card); stroke: #8a8170; stroke-width: 1.5; }
+    .jar-name { font-size: 11px; text-anchor: middle; fill: var(--dim); }
+    .jar-value { font-size: 11px; text-anchor: middle; font-weight: 700; fill: var(--ink); }
+    .fixed { fill: #f3eee2; stroke-width: 1.5; }
+    .fixed-name { font-size: 10.5px; text-anchor: middle; fill: var(--dim); }
+    .fixed-value { font-size: 10px; text-anchor: middle; fill: var(--ink); }
+    .junction { fill: var(--dim); }
+  </style>
+</head>
+<body>
+  <h1>The Workbench</h1>
+  <p class="sub">For grown-ups: <strong>put a system in</strong> for a kid to pull apart. A system is parts wired together with three laws and honest numbers; you check what it does before a kid ever sees it.</p>
+  <div class="wrap">
+    <section class="card">
+      <h2>1. Start from one, or from nothing</h2>
+      <div class="row" id="starters"></div>
+    </section>
+
+    <section class="card">
+      <h2>2. The system</h2>
+      <p class="muted">Plain JSON. It may choose laws, wiring and numbers — never write a law. Every number should say what it is a model of, and the notes should say what the model leaves out.</p>
+      <textarea id="source" spellcheck="false" aria-label="the system, as JSON"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="check">Check it</button>
+        <span id="status" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card" id="preview" hidden>
+      <h2>3. What it looks like, and what it does</h2>
+      <div id="stagescroll"><svg id="diagram" role="img" aria-label="the system"></svg></div>
+      <p id="healthy"></p>
+      <ul id="warnings" class="warn"></ul>
+    </section>
+
+    <section class="card" id="keycard" hidden>
+      <h2>4. The answer key: every change a kid can make, run</h2>
+      <p class="muted">This is what the kid will discover. Read it against what you know about the real thing: if pulling a part here does something the real part would not, the numbers are wrong, or the notes must say why.</p>
+      <label class="row"><input type="checkbox" id="withblocks" /> include blocking each flow</label>
+      <div class="tablescroll"><table id="key"></table></div>
+      <p id="keystatus" class="muted"></p>
+    </section>
+
+    <section class="card" id="savecard" hidden>
+      <h2>5. Put it on this device’s shelf</h2>
+      <label class="tick"><input type="checkbox" id="looked" /> <span>I have read the answer key, and it matches what I know about the real thing — or the model’s notes say plainly where it doesn’t.</span></label>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="save" disabled>Save to the shelf</button>
+        <span id="saved" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>On this device’s shelf</h2>
+      <p class="muted">Pull It Apart offers these beside the built-in systems, on this device only.</p>
+      <ul class="saved" id="shelf"></ul>
+    </section>
+
+    <section class="card">
+      <details>
+        <summary>Draft a system with an AI chat</summary>
+        <p class="muted">Copy this into a chat with Claude, describe the system you want, and paste the JSON it gives back into step 2. The check here is the same one the game uses, so nothing it writes can get past the laws — but whether its numbers are true of the real thing is your call, which is what the answer key is for.</p>
+        <div class="row"><button id="copyprompt">Copy the prompt</button><span id="copied" class="muted"></span></div>
+        <pre class="prompt" id="prompt"></pre>
+      </details>
+    </section>
+
+    <p class="credit">The kid’s side: <a href="./apart.html">Pull It Apart</a> · the educator’s window: <a href="./educator.html">flags and the shelf of builds</a>.</p>
+  </div>
+  <script type="module" src="./workbench.js"></script>
+</body>
+</html>

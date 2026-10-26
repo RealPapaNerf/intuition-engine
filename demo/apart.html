@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pull It Apart</title>
+  <style>
+    :root { --paper: #f4efe4; --ink: #2b2620; --dim: #6b6354; --line: #b8ab8f; --soft: #e0d6bf; --card: #fffdf7; --good: #2e8b57; --bad: #c0392b; --warn: #d98a1c; }
+    body { font-family: system-ui, sans-serif; background: var(--paper); color: var(--ink); margin: 0; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    h1 { margin: 4px 0 0; font-size: 1.3rem; }
+    p.sub { margin: 0; color: var(--dim); font-size: 0.9rem; text-align: center; max-width: 860px; }
+    .wrap { width: 100%; max-width: 980px; display: flex; flex-direction: column; gap: 10px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    .row .label { color: var(--dim); font-size: 0.9rem; }
+    button { font: inherit; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); cursor: pointer; min-height: 40px; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button[aria-pressed='true'] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+    button.primary { background: var(--ink); color: var(--card); border-color: var(--ink); font-weight: 600; }
+    button.pick { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 92px; padding: 8px 10px; line-height: 1.15; }
+    button.pick .picon { font-size: 1.7rem; }
+    button.pick .plabel { font-size: 0.82rem; }
+    button.pick.chosen { outline: 3px solid var(--ink); }
+    [hidden] { display: none !important; }
+    .card { background: var(--card); border: 1px solid var(--soft); border-radius: 10px; padding: 10px 14px; }
+    .card p { margin: 4px 0; }
+    #introcard { display: flex; gap: 10px; align-items: center; justify-content: center; text-align: center; }
+    #shelf button { display: flex; align-items: center; gap: 6px; }
+    #shelf button .s-icon { font-size: 1.3rem; }
+    #stage { position: relative; }
+    #stagescroll { overflow-x: auto; border-radius: 12px; border: 1px solid var(--soft); background: var(--card); }
+    #diagram { width: 100%; min-width: 680px; height: auto; max-height: 64vh; display: block; background: var(--card); touch-action: pan-x pan-y; }
+    #clock { position: absolute; top: 8px; left: 12px; font-size: 0.85rem; color: var(--dim); background: rgba(255,253,247,0.9); padding: 2px 8px; border-radius: 6px; }
+    #captions { position: absolute; left: 12px; right: 12px; bottom: 8px; display: flex; flex-direction: column; gap: 3px; pointer-events: none; }
+    #captions div { background: rgba(43,38,32,0.86); color: #fffdf7; font-size: 0.88rem; padding: 4px 10px; border-radius: 8px; align-self: flex-start; max-width: 100%; }
+    .hint { color: var(--dim); font-size: 0.88rem; text-align: center; }
+    #partpanel h2, #gate h2, #result h2 { margin: 2px 0 6px; font-size: 1.08rem; }
+    #partpanel .wired { color: var(--dim); font-size: 0.88rem; margin: 2px 0 8px; }
+    #partpanel .acts { justify-content: flex-start; }
+    #flows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    #flows button { text-align: left; font-size: 0.9rem; }
+    .question { font-size: 1.12rem; font-weight: 600; text-align: center; margin: 4px 0 10px; }
+    .advice { font-size: 1.02rem; font-weight: 600; text-align: center; margin: 4px 0; }
+    .band { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .band input { font: inherit; width: 5.5em; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+    .err { color: var(--bad); font-size: 0.9rem; min-height: 1.2em; text-align: center; }
+    #verdict { font-size: 1.25rem; font-weight: 700; text-align: center; }
+    #truth { text-align: center; font-size: 1.02rem; }
+    #chart { width: 100%; height: auto; display: block; }
+    #cascade { margin: 6px 0 0; padding-left: 18px; font-size: 0.92rem; }
+    #cascade li { margin: 2px 0; }
+    .stats { display: flex; gap: 18px; font-size: 0.95rem; flex-wrap: wrap; justify-content: center; }
+    .stats b { font-variant-numeric: tabular-nums; }
+    textarea, input[type='text'] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); min-width: 16em; }
+    details { font-size: 0.9rem; }
+    details summary { cursor: pointer; color: var(--dim); }
+    .readings { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .readings td, .readings th { padding: 3px 8px 3px 0; text-align: left; }
+    .readings th { color: var(--dim); font-weight: 600; }
+    .credit { margin: 0; font-size: 0.75rem; color: #8a8170; text-align: center; }
+    .credit a { color: inherit; }
+    /* the diagram */
+    .board { fill: var(--card); }
+    .line { fill: none; stroke-linecap: round; opacity: 0.9; }
+    .line.idle { opacity: 0.22; }
+    .line.blocked { stroke-dasharray: 3 5; opacity: 0.5; }
+    .line.helper { stroke-width: 1.2; stroke-dasharray: 2 4; opacity: 0.6; }
+    .line.need { stroke-width: 1.2; stroke-dasharray: 1 5; opacity: 0.7; }
+    .line.gate { stroke-width: 1.4; stroke-dasharray: 6 4; opacity: 0.7; }
+    .line.faint { opacity: 0.15; }
+    .hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; pointer-events: stroke; }
+    .dot { pointer-events: none; }
+    .card { cursor: pointer; }
+    .card:focus { outline: none; }
+    .card:focus .card-box { stroke: var(--ink); stroke-width: 2.5; }
+    .card-box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+    .card.selected .card-box { stroke: var(--ink); stroke-width: 3; }
+    .card.out { opacity: 0.38; }
+    .card.out .card-box { stroke-dasharray: 5 4; }
+    .card.bad .card-box { stroke: var(--warn); stroke-width: 2.5; }
+    .card.broken .card-box { stroke: var(--bad); stroke-width: 3; fill: #fbe9e7; }
+    .card.dim { opacity: 0.3; }
+    .card-icon { font-size: 24px; text-anchor: middle; dominant-baseline: middle; }
+    .card-name { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+    .card-badge { font-size: 12px; text-anchor: end; fill: var(--dim); }
+    .bar { fill: #efe7d6; }
+    .bar-value { font-size: 9.5px; text-anchor: end; fill: var(--ink); }
+    .jar { fill: var(--card); stroke: #8a8170; stroke-width: 1.5; }
+    .jar-name { font-size: 11px; text-anchor: middle; fill: var(--dim); }
+    .jar-value { font-size: 11px; text-anchor: middle; font-weight: 700; fill: var(--ink); }
+    .fixed { fill: #f3eee2; stroke-width: 1.5; }
+    .fixed-name { font-size: 10.5px; text-anchor: middle; fill: var(--dim); }
+    .fixed-value { font-size: 10px; text-anchor: middle; fill: var(--ink); }
+    .junction { fill: var(--dim); }
+    .floating .junction { fill: #d8d0bf; }
+    /* the chart */
+    .plot { fill: var(--card); stroke: var(--soft); }
+    .grid { stroke: #efe7d6; }
+    .tick { font-size: 11px; fill: var(--dim); }
+    .tick.y { text-anchor: end; }
+    .tick.x { text-anchor: middle; }
+    .kidband { fill: rgba(43, 38, 32, 0.12); }
+    .goal-line { stroke: var(--bad); stroke-dasharray: 5 4; }
+    .goal-label { font-size: 11px; text-anchor: end; fill: var(--bad); }
+    .series { fill: none; stroke-width: 2.5; }
+    .series.dashed { stroke-dasharray: 6 5; opacity: 0.75; }
+    .mark { stroke: var(--ink); stroke-dasharray: 2 3; }
+    .mark-label { font-size: 11px; fill: var(--ink); }
+    .legend { font-size: 11px; fill: var(--dim); }
+  </style>
+</head>
+<body>
+  <h1>Pull It Apart</h1>
+  <p class="sub">Take a part out. Put a bad one in. Add another, move it, block it. <strong>Say what will happen before you see it</strong> — then the system shows you.</p>
+  <div class="wrap">
+    <div class="row" id="shelf"></div>
+    <div class="card" id="introcard"><p id="introtext"></p><button id="readintro" hidden>🔊 Again</button></div>
+    <div class="row">
+      <button id="apart">Take it apart 🔧</button>
+      <button id="mystery">Something’s wrong 🩺</button>
+      <button id="feel">Feel it 👍</button>
+      <button id="measure">Measure it 📏</button>
+      <button id="consultant">🤖 Consultant</button>
+    </div>
+    <div id="stage">
+      <div id="stagescroll"><svg id="diagram" role="group" aria-label="the system"></svg></div>
+      <div id="clock"></div>
+      <div id="captions" aria-live="polite"></div>
+    </div>
+    <div class="hint" id="hint"></div>
+
+    <section class="card" id="gate" hidden>
+      <div class="advice" id="advice"></div>
+      <div class="row" id="trustrow"></div>
+      <div class="question" id="question"></div>
+      <div class="row" id="options"></div>
+      <div class="row" id="bandrow" hidden>
+        <span class="band">
+          <span class="label">between</span>
+          <input id="lo" type="number" min="0" inputmode="decimal" placeholder="low" />
+          <span class="label">and</span>
+          <input id="hi" type="number" min="0" inputmode="decimal" placeholder="high" />
+          <span class="label" id="bandunit"></span>
+        </span>
+      </div>
+      <div class="err" id="gateerr"></div>
+      <div class="row">
+        <button class="primary" id="run" disabled>▶ Run it</button>
+        <button id="another">Ask me something else</button>
+      </div>
+    </section>
+
+    <section class="card" id="result" hidden>
+      <div id="verdict"></div>
+      <p id="truth"></p>
+      <p id="callwords" class="hint"></p>
+      <svg id="chart" role="img" aria-label="before and after"></svg>
+      <ol id="cascade"></ol>
+      <div id="followup" hidden>
+        <div class="question" id="followq"></div>
+        <div class="row" id="followpicks"></div>
+        <div class="row" id="followtyped">
+          <input id="followtext" type="text" maxlength="200" placeholder="…or say it your own way" />
+          <button id="followsend">Tell the grown-up</button>
+        </div>
+        <div class="row"><button id="followskip">Skip</button></div>
+        <p class="hint" id="followout"></p>
+      </div>
+      <div class="row" id="afterrow">
+        <button id="keepgoing">Keep changing it</button>
+        <button id="reset">Put it all back</button>
+        <button id="nextmystery" hidden>Another mystery 🩺</button>
+      </div>
+    </section>
+
+    <section class="card" id="partpanel" hidden>
+      <h2 id="parttitle"></h2>
+      <p id="partsays"></p>
+      <div class="wired" id="partwired"></div>
+      <div class="row acts" id="partacts"></div>
+      <div id="flows"></div>
+    </section>
+
+    <div class="stats">
+      <span>Your calls: <b id="calib">—</b></span>
+      <span>Trusting the Consultant: <b id="trust">—</b></span>
+      <span id="checksbox" hidden>Checks left: <b id="checks">—</b></span>
+    </div>
+    <details class="card" id="aboutmodel">
+      <summary>About this model</summary>
+      <p id="modelwhat"></p>
+      <p><strong>What it leaves out:</strong></p>
+      <ul id="modelnotes"></ul>
+      <p><strong>Where its numbers come from:</strong></p>
+      <ul id="modelsources"></ul>
+    </details>
+    <p class="credit">Everything that happens here is worked out by three laws in <code>systems/</code>: nothing is written down in advance. The other playables: <a href="./index.html">Will It Break</a> · <a href="./lens.html">The Lens</a>. For grown-ups: <a href="./workbench.html">the Workbench</a> (put a system in) · <a href="./educator.html">the educator’s window</a>.</p>
+  </div>
+  <script type="module" src="./apart.js"></script>
+</body>
+</html>

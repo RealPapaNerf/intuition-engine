@@ -11,7 +11,7 @@ const sys = (id) => LIBRARY.find((s) => s.id === id);
 const near = (got, want, rel, what = '') => assert.ok(Math.abs(got - want) <= rel * Math.abs(want), `${what} ${got} vs ${want}`);
 
 test('every built-in system validates, runs healthy, and meets its own goal', () => {
-  assert.deepEqual(LIBRARY.map((s) => s.id), ['flashlight', 'kidneys', 'flu-cell', 'car']);
+  assert.deepEqual(LIBRARY.map((s) => s.id), ['flashlight', 'kidneys', 'flu-cell', 'car', 'bathtub']);
   for (const s of LIBRARY) {
     const r = runSystem(s);
     assert.equal(r.verdict, 'works', `${s.id} as it ships`);
@@ -194,4 +194,31 @@ test('car: lose the cooling and the engine seizes; the fan is not needed at spee
   }
   assert.equal(runSystem(C, swapBad(C, {}, 'thermostat', 'stuck-shut')).broke[0]?.part, 'engine');
   assert.equal(runSystem(C, pull(C, {}, 'fan')).verdict, 'works');
+});
+
+// --- The bathtub: the stock and flow there is nothing simpler than -----------------------
+
+const B = sys('bathtub');
+
+test('bathtub: it settles where in = out — 8 L/min = 0.8 L/min/cm × h, so h = 10 cm', () => {
+  near(runSystem(B).stats.node.tub.end, 8 / 0.8, 1e-6, 'depth');
+});
+
+test('bathtub: no drain, and it rises 8/6 cm a minute to the top at (30 − 10) / (8/6) = 15 min', () => {
+  const r = runSystem(B, pull(B, {}, 'drain'));
+  assert.equal(r.failure.check, 1, 'it overflowed');
+  near(r.failedAt, (30 - 10) / (8 / 6), 0.01, 'when');
+});
+
+test('bathtub: no tap, and it drains as 10·e^(−t/τ), τ = 6/0.8, under 5 cm at τ·ln 2', () => {
+  const r = runSystem(B, pull(B, {}, 'tap'));
+  assert.equal(r.failure.check, 0, 'it ran dry');
+  near(r.failedAt, (6 / 0.8) * Math.log(2), 0.03, 'when');
+});
+
+test('bathtub: two taps settle twice as deep (20 cm), under the top — the stock does not follow the flow', () => {
+  const r = runSystem(B, addCopy(B, {}, 'tap'));
+  assert.equal(r.verdict, 'works');
+  // it climbs toward 20 with τ = 7.5 min: 20 − 10·e^(−30/7.5) after half an hour
+  near(r.stats.node.tub.end, 20 - 10 * Math.exp(-30 / 7.5), 0.01, 'still rising at the end');
 });
