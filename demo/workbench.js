@@ -119,6 +119,9 @@ function preview() {
   $('healthy').textContent = goal + reading;
   const warn = [];
   if (healthy.verdict !== 'works') warn.push('A kid starts from a system that works. Is the goal or a number off?');
+  for (const b of healthy.broke) {
+    warn.push(`As it ships, ${b.part} breaks at ${b.t} ${checked.time.unit} — and stays broken, so the kid’s next run starts from a broken one. Is its rating or a number off?`);
+  }
   if (LIBRARY.some((b) => b.id === checked.id) && JSON.stringify(raw) !== JSON.stringify(LIBRARY_DATA.find((d) => d.id === checked.id))) {
     warn.push(`The id “${checked.id}” is a built-in system’s: give yours its own id before saving.`);
   }
@@ -291,7 +294,7 @@ function authoringPrompt() {
     `- id (lowercase letters, digits, dashes), title, icon (one emoji), model (one line: what this is a model of), intro (for a child: the scene and the goal, no hints).`,
     `- time: { unit: one of ${Object.keys(TIME_UNITS).join(', ')}, step, run } — at most ${LIMITS.steps} steps; pick a step small next to how fast things change.`,
     '- substances: [{ id, name (kid words), amount (unit), level (unit), flow (optional display unit), color (#rrggbb) }].',
-    '- nodes — where stuff is: { id, substance, name, kind: "store", capacity (amount per unit of level), start (amount), max? } or { kind: "fixed", level } (the outside world: air, a drain, ground) or { kind: "junction" } (wires meeting; stores nothing). Give unheld nodes at: [column, row] for the diagram.',
+    '- nodes — where stuff is: { id, substance, name, kind: "store", capacity (amount per unit of level), start (amount), max? (room for machines only: a store a conduct or oneway flow touches may not have one — if it overflows, make the overflow a oneway flow out at the brim) } or { kind: "fixed", level } (the outside world: air, a drain, ground; level 0 or more — levels count up from empty, so for warmth count from below the coldest thing) or { kind: "junction" } (wires meeting; stores nothing). Give unheld nodes at: [column, row] for the diagram.',
     '- parts: [{ id, name, icon, says (what it is — not what it is for), job (what it is for, in kid words), at: [column, row], holds?: [store ids it contains], within?: part id it sits inside, keep?: true for the stage that cannot be pulled, installed?: false for a spare, copies?: how many more the kid may add (only if a copy would really connect the way a real extra one would), flows, gates?, ratings?, faults? }].',
     '',
     'THE ONLY LAWS (a flow chooses one; nothing else exists):',

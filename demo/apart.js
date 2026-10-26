@@ -634,6 +634,7 @@ function finish() {
   const { result, call, symptom } = play;
   play = null;
   phase = 'result';
+  $('captions').replaceChildren(); // the result card lists the whole cascade; the diagram is uncovered again
   bench = result.after; // what broke stays broken
   diagram.setBench(bench);
   diagram.setFrame(frameAt(result, result.trace.t.length - 1));
@@ -802,7 +803,8 @@ function drawResultChart(result, question, commitment = null) {
     svg.replaceChildren();
     return;
   }
-  const pick = (r) => (read.node !== undefined ? r.trace.nodes[read.node] : r.trace.flows[read.flow].map(Math.abs));
+  // as the goal reads it: across every copy, so a spare light is charted shining
+  const pick = (r) => (read.node !== undefined ? r.trace.all.node[read.node] : r.trace.all.flow[read.flow]);
   const sub = read.node !== undefined ? S.substances.find((s) => s.id === S.nodes.find((n) => n.id === read.node)?.substance) : null;
   const unit = sub ? sub.level : flowUnit(S, read.flow);
   const color = sub?.color ?? '#2b2620';

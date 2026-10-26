@@ -34,7 +34,7 @@
 // decisions 2026-10-19 §6 — and test/systems.test.js checks the source).
 
 import { faulted, partState, isPresent, changes, withBroken, benchKey, instances, instanceOf, slotOf } from './system.js';
-import { solveLinear } from './linear.js';
+import { factor, solveFactored } from './linear.js';
 
 const STORE = 0;
 const FIXED = 1;
@@ -64,35 +64,41 @@ function assemble(system, bench) {
       }
       const base = system.nodes.find((n) => n.id === nid);
       const id = `${nid}#${x.copy}`;
-      nodes.push({ ...base, id, name: `${base.name} (${x.copy})`, at: undefined });
+      nodes.push({ ...base, id, of: nid, name: `${base.name} (${x.copy})`, at: undefined });
       holder.set(id, i);
       rename[i].set(nid, id);
     }
   });
   const own = (i, nid) => rename[i].get(nid) ?? nid;
 
-  // Where each moved two-ended flow runs. Beside a part: between its two
-  // ends. In line with it: the part ends at a new junction, and each part
-  // in line runs on to the next, in bench order.
+  // Where each moved two-ended flow runs. In line with a part: the part
+  // ends at a new junction, and each part in line runs on to the next, in
+  // bench order. Beside a part: between its two ends, wherever they are
+  // once its line is laid. (A place on a copy that is not on the bench
+  // is no place: the part stays in its own.)
   const ends = new Map();
   const chains = new Map();
+  const placed = (x) => (x.state.at && instIx.has(x.state.at.part) ? x.state.at : null);
   insts.forEach((x, i) => {
-    const at = x.state.at;
-    if (!at) return;
+    const at = placed(x);
+    if (at?.how !== 'inline') return;
     const t = slotOf(system, at.part);
-    if (at.how === 'beside') ends.set(i, [t.from, t.to]);
-    else {
-      if (!chains.has(at.part)) chains.set(at.part, []);
-      chains.get(at.part).push(i);
-      nodes.push({ id: `${x.id}~in`, substance: t.substance, name: `between ${instanceOf(system, at.part).part.name} and ${x.part.name}`, kind: 'junction' });
-    }
+    if (!chains.has(at.part)) chains.set(at.part, []);
+    chains.get(at.part).push(i);
+    nodes.push({ id: `${x.id}~in`, substance: t.substance, name: `between ${instanceOf(system, at.part).part.name} and ${x.part.name}`, kind: 'junction' });
   });
   for (const [targetId, chain] of chains) {
     const t = slotOf(system, targetId);
     const juncs = chain.map((i) => `${insts[i].id}~in`);
-    if (instIx.has(targetId)) ends.set(instIx.get(targetId), [t.from, juncs[0]]);
+    ends.set(instIx.get(targetId), [t.from, juncs[0]]);
     chain.forEach((i, k) => ends.set(i, [juncs[k], k + 1 < juncs.length ? juncs[k + 1] : t.to]));
   }
+  insts.forEach((x, i) => {
+    const at = placed(x);
+    if (at?.how !== 'beside') return;
+    const t = slotOf(system, at.part);
+    ends.set(i, ends.get(instIx.get(at.part)) ?? [t.from, t.to]);
+  });
 
   const N = nodes.length;
   const nodeIx = new Map(nodes.map((n, i) => [n.id, i]));
@@ -116,7 +122,7 @@ function assemble(system, bench) {
       const needs = f.needs.map((n) =>
         n.part !== undefined ? { part: ofPart.get(n.part), name: n.part } : { node: nodeIx.get(own(i, n.node)), atLeast: n.atLeast, atMost: n.atMost },
       );
-      const base = { id: f.id + tag, part: i, needs, gates: [], blocked: blocked.has(f.id + tag) };
+      const base = { id: f.id + tag, of: f.id, part: i, needs, gates: [], blocked: blocked.has(f.id + tag) };
       if (f.law === 'react') {
         flows.push({
           ...base,
@@ -142,7 +148,10 @@ function assemble(system, bench) {
       });
     }
     for (const g of x.part.gates) {
-      gates.push({ flow: g.flow, by: nodeIx.get(own(i, g.by)), open: g.open, at: g.at, band: g.band, part: i, stuck: made.stuck.get(g.flow) ?? null });
+      // A copy's gate on the part's own flow sits on the copy's flow; on
+      // another part's flow, it is one more gate on that same flow.
+      const flow = x.part.flows.some((f) => f.id === g.flow) ? g.flow + tag : g.flow;
+      gates.push({ flow, by: nodeIx.get(own(i, g.by)), open: g.open, at: g.at, band: g.band, part: i, stuck: made.stuck.get(g.flow) ?? null });
     }
     for (const r of x.part.ratings) {
       ratings.push({ ...r, flow: r.flow === undefined ? undefined : r.flow + tag, node: r.node === undefined ? undefined : own(i, r.node), part: i });
@@ -183,6 +192,7 @@ function assemble(system, bench) {
   const nets = system.substances.map((sub, si) => ({
     flows: flows.map((f, fi) => (f.passive && f.sub === si ? fi : -1)).filter((fi) => fi >= 0),
     nodes: nodes.map((n, i) => (n.substance === sub.id && kind[i] !== FIXED ? i : -1)).filter((i) => i >= 0),
+    shapes: new Map(), // solveLevels' kept eliminations, per set of links
   }));
   const reacts = flows.map((f, fi) => (f.passive ? -1 : fi)).filter((fi) => fi >= 0);
   const consumers = Array.from({ length: N }, () => []);
@@ -193,7 +203,13 @@ function assemble(system, bench) {
   }
   const rationed = nodes.map((_, i) => i).filter((i) => kind[i] === STORE && (consumers[i].length || producers[i].length));
 
-  return { system, nodes, parts: insts, instIx, present, broken, holder, flows, gates, ratings, kind, capacity, max, here, A, L, nets, reacts, consumers, producers, rationed, nodeIx, flowIx };
+  // Every copy of each of the system's own nodes and flows, the original
+  // first: what a goal or the instrument reads (readValue).
+  const copiesOf = { node: new Map(), flow: new Map() };
+  nodes.forEach((n, i) => copiesOf.node.set(n.of ?? n.id, [...(copiesOf.node.get(n.of ?? n.id) ?? []), i]));
+  flows.forEach((f, fi) => copiesOf.flow.set(f.of, [...(copiesOf.flow.get(f.of) ?? []), fi]));
+
+  return { system, nodes, parts: insts, instIx, ofPart, copiesOf, present, broken, holder, flows, gates, ratings, kind, capacity, max, here, A, L, nets, reacts, consumers, producers, rationed, nodeIx, flowIx };
 }
 
 // The bench as the run will see it, without running anything: every
@@ -281,7 +297,7 @@ function ration(M, why, dt, rate, bind, s) {
   }
   const inflow = new Float64Array(A.length);
   const outflow = new Float64Array(A.length);
-  for (let iter = 0; iter < 64; iter++) {
+  const tally = () => {
     inflow.fill(0);
     outflow.fill(0);
     for (const [fi, r0] of want) {
@@ -289,6 +305,10 @@ function ration(M, why, dt, rate, bind, s) {
       for (const [n, k] of flows[fi].ins) outflow[n] += r * k;
       for (const [n, k] of flows[fi].outs) inflow[n] += r * k;
     }
+  };
+  let settled = false;
+  for (let iter = 0; iter < 64; iter++) {
+    tally();
     // Per store, the factor its machines must slow by; each machine
     // takes the smallest factor of any store it touches.
     const cut = new Map();
@@ -314,10 +334,34 @@ function ration(M, why, dt, rate, bind, s) {
         for (const fi of M.producers[n]) if (want.has(fi)) tighten(fi, k, { full: n });
       }
     }
-    if (cut.size === 0) break;
+    if (cut.size === 0) {
+      settled = true;
+      break;
+    }
     for (const [fi, k] of cut) {
       x.set(fi, x.get(fi) * k);
       bind[fi] = cutBy.get(fi);
+    }
+  }
+  if (!settled) {
+    // Machines that feed each other can go on cutting each other by ever
+    // smaller factors. If 64 passes have not settled it, one cut that holds
+    // whatever the others do: no store gives more than it held at the
+    // start of the step, none takes in more than the room it had. Slower
+    // than it might have been, for one step; never stuff from nowhere.
+    tally();
+    const slow = new Map();
+    const slowBy = (fi, k, why) => {
+      if (want.has(fi) && k < (slow.get(fi)?.k ?? 1)) slow.set(fi, { k, why });
+    };
+    for (const n of M.rationed) {
+      if (kind[n] !== STORE || !M.here[n]) continue;
+      if (outflow[n] > 0) for (const fi of M.consumers[n]) slowBy(fi, A[n] / (dt * outflow[n]), { dry: n });
+      if (inflow[n] > 0) for (const fi of M.producers[n]) slowBy(fi, Math.max(0, max[n] - A[n]) / (dt * inflow[n]), { full: n });
+    }
+    for (const [fi, { k, why }] of slow) {
+      x.set(fi, x.get(fi) * k);
+      bind[fi] = why;
     }
   }
   for (const [fi, r0] of want) {
@@ -353,20 +397,23 @@ function solveNet(M, net, why, on, dt, s, storesKnown, value, diag) {
     }
     return;
   }
-  const unknown = net.nodes.filter((n) => here[n] && (!storesKnown || kind[n] === JUNCTION));
-  const local = new Map(unknown.map((n, i) => [n, i]));
+  // What the solve is for: every junction, and every store too unless
+  // their levels are known (the first solve, before the first step).
+  const which = storesKnown ? 'junctions' : 'all';
+  net.unknown ??= {};
+  net.unknown[which] ??= net.nodes.filter((n) => here[n] && (!storesKnown || kind[n] === JUNCTION));
+  const unknown = net.unknown[which];
+  const lv = Float64Array.from(L); // the levels this solve finds, the rest as they are
   const oneways = net.flows.filter((fi) => flows[fi].oneway && why[fi] === null && flows[fi].g > 0);
   const tried = new Set();
-  let level = null;
   const maxIter = 4 + 2 * oneways.length;
   for (let iter = 0; ; iter++) {
-    const links = net.flows.filter((fi) => why[fi] === null && flows[fi].g > 0 && (!flows[fi].oneway || on[fi]));
-    level = solveLevels(M, unknown, local, links, dt, s, storesKnown);
+    solveLevels(M, net, which, unknown, linksOf(M, net, why, on), dt, s, lv);
     let changed = false;
     for (const fi of oneways) {
       const f = flows[fi];
-      const va = level.get(f.a) ?? L[f.a];
-      const vb = level.get(f.b) ?? L[f.b];
+      const va = lv[f.a];
+      const vb = lv[f.b];
       const tol = 1e-9 * Math.max(1, Math.abs(va), Math.abs(vb), f.d);
       if (on[fi]) {
         if (Number.isFinite(va) && Number.isFinite(vb) && va - vb - f.d < -tol) {
@@ -391,8 +438,23 @@ function solveNet(M, net, why, on, dt, s, storesKnown, value, diag) {
       break;
     }
   }
+  // A oneway left on that carries nothing, pushed no harder than its
+  // drop, is off: an LED tried on across a dead, floating wire must not
+  // hold that wire at its drop. Taking out a link that carries nothing
+  // moves no level but one it alone held up, which floats — so this is
+  // one more solve, not another round, and it cannot cycle.
+  const idle = oneways.filter((fi) => {
+    const f = flows[fi];
+    const va = lv[f.a];
+    const vb = lv[f.b];
+    return on[fi] && Number.isFinite(va) && Number.isFinite(vb) && va - vb - f.d <= 1e-9 * Math.max(1, Math.abs(va), Math.abs(vb), f.d);
+  });
+  if (idle.length) {
+    for (const fi of idle) on[fi] = 0;
+    solveLevels(M, net, which, unknown, linksOf(M, net, why, on), dt, s, lv);
+  }
   for (const n of unknown) {
-    let v = level.get(n);
+    let v = lv[n];
     if (kind[n] === STORE) {
       if (v < 0) {
         diag.clamped += -v * capacity[n];
@@ -416,8 +478,61 @@ function solveNet(M, net, why, on, dt, s, storesKnown, value, diag) {
 // One backward-Euler solve over the given conducting links. Returns
 // node → new level for the unknowns; a network with nothing to hold its
 // level (junctions joined only to each other) floats, and reads NaN.
-function solveLevels(M, unknown, local, links, dt, s, storesKnown) {
+// A network keeps the same links for step after step (they change when a
+// oneway, a gate or a need does), and its matrix depends on nothing else:
+// so its shape and its elimination are kept, per set of links, and each
+// step only runs the new right-hand side through them.
+function solveLevels(M, net, which, unknown, links, dt, s, lv) {
   const { flows, kind, capacity, L } = M;
+  const storesKnown = which === 'junctions';
+  // links are flow indexes in order, each well under 65536: one character each is an exact key
+  const key = which + String.fromCharCode(...links);
+  let shape = net.shapes.get(key);
+  if (!shape) {
+    shape = shapeOf(M, unknown, links, dt, storesKnown);
+    if (net.shapes.size >= 64) net.shapes.clear();
+    net.shapes.set(key, shape);
+  }
+  for (const n of shape.floating) lv[n] = NaN;
+  for (const { members, touching, F } of shape.groups) {
+    const b = new Float64Array(members.length);
+    members.forEach((n, i) => {
+      if (!storesKnown && kind[n] === STORE) b[i] += (capacity[n] / dt) * L[n];
+      b[i] += s[n];
+    });
+    // flow a→b = g·(La − Lb − d); each row is −(what flows in).
+    for (const [fi, ia, ib] of touching) {
+      const f = flows[fi];
+      if (ia >= 0) {
+        if (ib < 0) b[ia] += f.g * L[f.b];
+        b[ia] += f.g * f.d;
+      }
+      if (ib >= 0) {
+        if (ia < 0) b[ib] += f.g * L[f.a];
+        b[ib] -= f.g * f.d;
+      }
+    }
+    const xs = F ? solveFactored(F, b) : null;
+    members.forEach((n, i) => (lv[n] = xs ? xs[i] : NaN));
+  }
+}
+
+// The links conducting right now, in the network's order.
+function linksOf(M, net, why, on) {
+  const links = [];
+  for (const fi of net.flows) {
+    const f = M.flows[fi];
+    if (why[fi] === null && f.g > 0 && (!f.oneway || on[fi])) links.push(fi);
+  }
+  return links;
+}
+
+// A network's shape for one set of links: which unknowns float, and for
+// each group joined to something that holds a level, its links and its
+// matrix, eliminated.
+function shapeOf(M, unknown, links, dt, storesKnown) {
+  const { flows, kind, capacity } = M;
+  const local = new Map(unknown.map((n, i) => [n, i]));
   const parent = unknown.map((_, i) => i);
   const root = (i) => {
     while (parent[i] !== i) i = parent[i] = parent[parent[i]];
@@ -440,68 +555,75 @@ function solveLevels(M, unknown, local, links, dt, s, storesKnown) {
     if (ia !== undefined && ib === undefined) anchored[root(ia)] = 1;
     if (ib !== undefined && ia === undefined) anchored[root(ib)] = 1;
   }
-  const groups = new Map();
+  const byRoot = new Map();
   unknown.forEach((n, i) => {
     const r = root(i);
-    if (!groups.has(r)) groups.set(r, []);
-    groups.get(r).push(n);
+    if (!byRoot.has(r)) byRoot.set(r, []);
+    byRoot.get(r).push(n);
   });
-  const out = new Map();
-  for (const [r, members] of groups) {
+  const floating = [];
+  const groups = [];
+  for (const [r, members] of byRoot) {
     if (!anchored[r]) {
-      for (const n of members) out.set(n, NaN);
+      floating.push(...members);
       continue;
     }
     const at = new Map(members.map((n, i) => [n, i]));
     const m = members.length;
     const Mx = Array.from({ length: m }, () => new Float64Array(m));
-    const b = new Float64Array(m);
     members.forEach((n, i) => {
-      if (!storesKnown && kind[n] === STORE) {
-        const c = capacity[n] / dt;
-        Mx[i][i] += c;
-        b[i] += c * L[n];
-      }
-      b[i] += s[n];
+      if (!storesKnown && kind[n] === STORE) Mx[i][i] += capacity[n] / dt;
     });
+    const touching = [];
     for (const fi of links) {
       const f = flows[fi];
       const ia = at.has(f.a) ? at.get(f.a) : -1;
       const ib = at.has(f.b) ? at.get(f.b) : -1;
       if (ia < 0 && ib < 0) continue;
-      // flow a→b = g·(La − Lb − d); each row is −(what flows in).
+      touching.push([fi, ia, ib]);
       if (ia >= 0) {
         Mx[ia][ia] += f.g;
         if (ib >= 0) Mx[ia][ib] -= f.g;
-        else b[ia] += f.g * L[f.b];
-        b[ia] += f.g * f.d;
       }
       if (ib >= 0) {
         Mx[ib][ib] += f.g;
         if (ia >= 0) Mx[ib][ia] -= f.g;
-        else b[ib] += f.g * L[f.a];
-        b[ib] -= f.g * f.d;
       }
     }
-    const xs = solveLinear(Mx, b);
-    members.forEach((n, i) => out.set(n, xs ? xs[i] : NaN));
+    groups.push({ members, touching, F: factor(Mx) });
   }
-  return out;
+  return { floating, groups };
+}
+
+// What a goal check or the instrument reads, now: a store's level or a
+// flow's size, the most of it across every copy of the part — a spare
+// light is a light, as a spare pump meets a need. ("The light glows"
+// holds if any light does; "under its limit" only if every one is.)
+// NaN when no copy is there to read.
+function readValue(M, read, value) {
+  return read.node !== undefined ? mostLevel(M, M.copiesOf.node.get(read.node)) : mostFlow(M.copiesOf.flow.get(read.flow), value);
+}
+// (Every comparison with NaN is false, so the first one there counts.)
+function mostLevel(M, ixs) {
+  let v = NaN;
+  for (const i of ixs) if (Number.isFinite(M.L[i]) && !(M.L[i] <= v)) v = M.L[i];
+  return v;
+}
+function mostFlow(ixs, value) {
+  let v = NaN;
+  for (const fi of ixs) if (!(Math.abs(value[fi]) <= v)) v = Math.abs(value[fi]);
+  return v;
 }
 
 // A goal check against the run as it stands.
 function checkPasses(M, check, value) {
-  if (check.part !== undefined) {
-    const pi = M.instIx.get(check.part);
-    return M.present[pi] && !M.broken[pi];
-  }
-  const v = check.read.node !== undefined ? M.L[M.nodeIx.get(check.read.node)] : Math.abs(value[M.flowIx.get(check.read.flow)]);
+  if (check.part !== undefined) return M.ofPart.get(check.part).some((pi) => M.present[pi] && !M.broken[pi]);
+  const v = readValue(M, check.read, value);
   return (check.above === null || v > check.above) && (check.below === null || v < check.below);
 }
 
 function checkValue(M, check, value) {
-  if (check.part !== undefined) return null;
-  return check.read.node !== undefined ? M.L[M.nodeIx.get(check.read.node)] : Math.abs(value[M.flowIx.get(check.read.flow)]);
+  return check.part !== undefined ? null : readValue(M, check.read, value);
 }
 
 const STOP_REASONS = ['missing', 'gone', 'low', 'high', 'dry'];
@@ -515,10 +637,11 @@ const stopReason = (why, bind) => {
 //   samples  how many points of the record to keep for drawing (the
 //            stats and the measure use every step regardless)
 //   normal   flow id → what it carries as shipped (normalsOf), so the
-//            cascade can say which flows stopped
+//            cascade can say which flows stopped, and each part's rests
+//            can be measured (below)
 // Returns the verdict, when and how it failed, what broke, the cascade's
-// events, the record, the measure's reading, and the bench as the run
-// left it (broken parts stay broken).
+// events, the record, the measure's reading, each part's rests (given
+// `normal`), and the bench as the run left it (broken parts stay broken).
 export function runSystem(system, bench = {}, { samples = 240, normal = null } = {}) {
   const M = assemble(system, bench);
   const { flows, gates, ratings, nodes } = M;
@@ -539,6 +662,14 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
   const stopped = new Uint8Array(F);
   const running = new Uint8Array(F);
   const broke = [];
+  // Each part's rests, step by step (a sampled record can miss a valve's
+  // short openings): a part is doing something while one of its flows
+  // carries at least 1% of what that flow carries at most as shipped.
+  const P = M.parts.length;
+  const partFlows = M.parts.map(() => []);
+  flows.forEach((f, fi) => partFlows[f.part].push(fi));
+  const resting = new Int32Array(P);
+  const longestRest = new Int32Array(P);
 
   const updateGates = (fresh) => {
     gates.forEach((g, gi) => {
@@ -557,7 +688,8 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
   for (const net of M.nets) solveNet(M, net, why, on, dt, s, true, value, diag);
   updateGates(true);
 
-  // The record: every node's level and every flow's value, sampled.
+  // The record: every node's level and every flow's value, sampled — and
+  // `all`, each of the system's own as a goal reads it (readValue).
   const every = Math.max(1, Math.ceil(steps / samples));
   const trace = { t: [0], nodes: {}, flows: {} };
   nodes.forEach((n, i) => (trace.nodes[n.id] = [M.L[i]]));
@@ -565,6 +697,17 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
   const stat = (v) => ({ min: v, max: v, end: v, sum: 0, n: 0 });
   const nodeStats = nodes.map((_, i) => stat(M.L[i]));
   const flowStats = flows.map(() => null);
+  // And as a goal reads them: each of the system's own nodes and flows
+  // across every copy of its part (readValue).
+  const ownNodes = system.nodes.map((n) => n.id);
+  const ownFlows = [...M.copiesOf.flow.keys()];
+  const ownNodeIx = ownNodes.map((id) => M.copiesOf.node.get(id));
+  const ownFlowIx = ownFlows.map((id) => M.copiesOf.flow.get(id));
+  const allNodeStats = ownNodeIx.map((ixs) => stat(mostLevel(M, ixs)));
+  const allFlowStats = ownFlows.map(() => null);
+  trace.all = { node: {}, flow: {} };
+  ownNodes.forEach((id, j) => (trace.all.node[id] = [mostLevel(M, ownNodeIx[j])]));
+  ownFlows.forEach((id) => (trace.all.flow[id] = [0]));
   const fold = (st, v) => {
     if (!Number.isFinite(v)) return st;
     if (!st || !Number.isFinite(st.min)) st = stat(v);
@@ -612,6 +755,13 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
       }
       running[fi] = now ? 1 : 0;
     }
+    if (normal) {
+      for (let pi = 0; pi < P; pi++) {
+        const doing = partFlows[pi].some((fi) => (normal[flows[fi].of] ?? 0) > 0 && Math.abs(value[fi]) >= 0.01 * normal[flows[fi].of]);
+        resting[pi] = doing ? 0 : resting[pi] + 1;
+        if (resting[pi] > longestRest[pi]) longestRest[pi] = resting[pi];
+      }
+    }
 
     // Ratings: pushed too far for too long, and it breaks.
     ratings.forEach((r, ri) => {
@@ -620,8 +770,10 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
       const v = r.flowIx >= 0 ? Math.abs(value[r.flowIx]) : M.L[r.nodeIx];
       if (!Number.isFinite(v)) return;
       const over = (r.above !== null && v > r.above) || (r.below !== null && v < r.below);
-      overload[ri] = over ? overload[ri] + dt : 0;
-      if (over && overload[ri] > r.for) {
+      // Counted in whole steps: twenty steps of 0.1 summed is a hair over
+      // 2, and "for 2" means longer than 2, not the twentieth step.
+      overload[ri] = over ? overload[ri] + 1 : 0;
+      if (over && overload[ri] * dt > r.for * (1 + 1e-9)) {
         M.broken[pi] = 1;
         broke.push({ part: M.parts[pi].id, t });
         events.push({ t, kind: 'broke', part: M.parts[pi].id, rating: r.flow !== undefined ? { flow: r.flow, above: r.above } : { node: r.node, above: r.above, below: r.below }, value: v });
@@ -630,8 +782,10 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
 
     updateGates(false);
 
-    for (let i = 0; i < N; i++) fold(nodeStats[i], M.L[i]);
+    for (let i = 0; i < N; i++) nodeStats[i] = fold(nodeStats[i], M.L[i]); // a junction can float, then not
     for (let fi = 0; fi < F; fi++) flowStats[fi] = fold(flowStats[fi], Math.abs(value[fi]));
+    for (let j = 0; j < ownNodes.length; j++) allNodeStats[j] = fold(allNodeStats[j], mostLevel(M, ownNodeIx[j]));
+    for (let j = 0; j < ownFlows.length; j++) allFlowStats[j] = fold(allFlowStats[j], mostFlow(ownFlowIx[j], value));
 
     if (failedAt === null) {
       for (let c = 0; c < checks.length; c++) {
@@ -646,20 +800,27 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
       }
     }
 
-    if (k === 0) flows.forEach((f, fi) => (trace.flows[f.id][0] = value[fi]));
+    if (k === 0) {
+      flows.forEach((f, fi) => (trace.flows[f.id][0] = value[fi]));
+      ownFlows.forEach((id, j) => (trace.all.flow[id][0] = mostFlow(ownFlowIx[j], value)));
+    }
     if ((k + 1) % every === 0 || k === steps - 1) {
       trace.t.push(t);
       nodes.forEach((n, i) => trace.nodes[n.id].push(M.L[i]));
       flows.forEach((f, fi) => trace.flows[f.id].push(value[fi]));
+      ownNodes.forEach((id, j) => trace.all.node[id].push(mostLevel(M, ownNodeIx[j])));
+      ownFlows.forEach((id, j) => trace.all.flow[id].push(mostFlow(ownFlowIx[j], value)));
     }
   }
 
   // min, max, end, and the mean over every step (a level held by a
   // thermostat swings; its mean is what it was held at)
   const out = (st) => (st ? { min: st.min, max: st.max, end: st.end, mean: st.n ? st.sum / st.n : st.end } : { min: 0, max: 0, end: 0, mean: 0 });
-  const statsOut = { node: {}, flow: {} };
+  const statsOut = { node: {}, flow: {}, all: { node: {}, flow: {} } };
   nodes.forEach((n, i) => (statsOut.node[n.id] = out(nodeStats[i])));
   flows.forEach((f, fi) => (statsOut.flow[f.id] = out(flowStats[fi])));
+  ownNodes.forEach((id, j) => (statsOut.all.node[id] = out(allNodeStats[j])));
+  ownFlows.forEach((id, j) => (statsOut.all.flow[id] = out(allFlowStats[j])));
   events.sort((a, b) => a.t - b.t);
   return {
     system: system.id,
@@ -668,7 +829,14 @@ export function runSystem(system, bench = {}, { samples = 240, normal = null } =
     failedAt,
     failure,
     broke,
-    events: events.slice(0, 60),
+    events: events.slice(0, 60), // for the page to play back; questions read `rests`
+    // per part: its longest rest, and its last one — how long, and from
+    // when (a part doing something at the end has a last rest of 0)
+    rests: normal
+      ? Object.fromEntries(
+          M.parts.map((x, pi) => [x.id, { longest: Number((longestRest[pi] * dt).toFixed(9)), last: Number((resting[pi] * dt).toFixed(9)), from: Number(((steps - resting[pi]) * dt).toFixed(9)) }]),
+        )
+      : null,
     stats: statsOut,
     reading: reading(system, statsOut, failedAt, steps * dt),
     trace,
@@ -699,7 +867,10 @@ export function reading(system, stats, failedAt, end) {
   if (!m) return null;
   let raw;
   if (m.read.lasts) raw = failedAt ?? end;
-  else raw = (m.read.node !== undefined ? stats.node[m.read.node] : stats.flow[m.read.flow])[m.read.stat];
+  else {
+    const read = stats.all ?? stats; // across every copy, as a goal reads
+    raw = (m.read.node !== undefined ? read.node[m.read.node] : read.flow[m.read.flow])[m.read.stat];
+  }
   if (!Number.isFinite(raw)) raw = 0;
   const maxed = m.read.lasts ? failedAt === null : raw > m.max;
   const clamped = Math.min(Math.max(raw, 0), m.max);

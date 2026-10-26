@@ -8,6 +8,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LIBRARY,
+  validateSystem,
+  wiring,
   runSystem,
   normalsOf,
   pull,
@@ -58,6 +60,54 @@ test('two batteries side by side: half the inside resistance — and twice the c
   assert.ok(Number.isFinite(r.stats.node['cells#2'].end), 'the copy brought its own charge');
 });
 
+test('a spare battery pack takes over when the first comes out: the minus spring stays', () => {
+  const spare = pull(F, addCopy(F, {}, 'batteries'), 'batteries');
+  near(glow(spare), (1000 * 1.2) / R_LOOP, 1e-4, 'one pack again');
+  // and with none at all the loop is dead: its wires float, the light carries nothing
+  const none = runSystem(F, pull(F, {}, 'batteries'));
+  assert.equal(none.stats.flow.glow.max, 0);
+  assert.ok(Number.isNaN(none.trace.nodes.plus[1]), 'no level from nowhere');
+});
+
+test('a spare light is a light: pull the first and the flashlight still shines', () => {
+  // The goal and the instrument read every copy of the part, the way a
+  // need is met by any of it: "it glows" if any light does.
+  for (const b of [pull(F, addCopy(F, {}, 'led'), 'led'), swapBad(F, addCopy(F, {}, 'led'), 'led', 'burnt')]) {
+    const r = runSystem(F, b);
+    assert.equal(r.verdict, 'works', benchKey(F, b));
+    near(r.stats.all.flow.glow.max, (1000 * 1.2) / R_LOOP, 1e-4, 'the spare carries what one light does');
+    assert.equal(r.reading.value, Math.round((1000 * 1.2) / R_LOOP));
+  }
+  // side by side, each light gets a share: two LEDs in parallel are 5 Ω,
+  // so each carries half of 1.2 / (R_loop − 5)
+  const both = runSystem(F, addCopy(F, {}, 'led'));
+  near(both.stats.all.flow.glow.max, (1000 * 1.2) / (R_LOOP - 5) / 2, 1e-4, 'the brightest of two');
+});
+
+test('a copy of a part that gates its own flow gates its copy of it', () => {
+  // A float valve: it lets water in while the tank is under 4. One step
+  // of backward Euler from empty: L = 10·g/(1 + g) — 5 through one valve
+  // (g = 1), 20/3 through two (g = 2) — and then each shuts its own flow.
+  const s = validateSystem({
+    id: 'float',
+    title: 'Float valves',
+    model: 'A test.',
+    intro: 'For the tests.',
+    time: { unit: 's', step: 1, run: 10 },
+    substances: [{ id: 'q', name: 'water', amount: 'L', level: 'L' }],
+    nodes: [
+      { id: 'main', substance: 'q', kind: 'fixed', level: 10 },
+      { id: 'tank', substance: 'q', kind: 'store', capacity: 1, start: 0 },
+    ],
+    parts: [{ id: 'valve', name: 'Float valve', at: [0, 0], copies: 1, flows: [{ id: 'fill', law: 'conduct', from: 'main', to: 'tank', g: 1 }], gates: [{ flow: 'fill', by: 'tank', open: 'below', at: 4 }] }],
+    goal: { says: 'It fills.', asks: 'Will it fill?', checks: [{ read: { node: 'tank' }, above: 1, when: 'end', fails: 'Empty.' }] },
+  });
+  const two = addCopy(s, {}, 'valve');
+  near(runSystem(s).stats.node.tank.end, 5, 1e-12, 'one valve');
+  near(runSystem(s, two).stats.node.tank.end, 20 / 3, 1e-12, 'two valves, each shut by its own float');
+  assert.deepEqual(wiring(s, two).flows.map((f) => [f.id, f.gates]), [['fill', ['valve']], ['fill#2', ['valve#2']]]);
+});
+
 test('a third kidney (a transplant) clears to G / (1.5 · K)', () => {
   const r = runSystem(K, addCopy(K, {}, 'left-kidney'));
   near(r.stats.node.blood.end, 16.67 / (3 * 2.083), 2e-3);
@@ -106,6 +156,25 @@ test('a wire where the resistor was is a short: ~115 mA, and the light burns out
   near(r.stats.flow.glow.max, (1000 * 1.2) / (R_LOOP - R_RES + 1000 / 50000), 1e-4, 'short');
   assert.equal(r.broke[0]?.part, 'led');
   assert.deepEqual(unplace(F, b, 'wire#2').parts['wire#2'], { as: 'ok' }, 'put back where copies go: beside its own');
+});
+
+test('a wire beside a resistor that has another in line with it bridges that one only', () => {
+  // resistor, then resistor#2 in line; the wire across the first:
+  // R = (R_res ∥ R_wire) + R_res, so the loop is R_loop + (R_res ∥ R_wire)
+  let b = place(F, addCopy(F, {}, 'resistor'), 'resistor#2', 'resistor', 'inline');
+  b = place(F, addCopy(F, b, 'wire'), 'wire#2', 'resistor', 'beside');
+  const par = 1 / (1 / R_RES + 50000 / 1000);
+  near(glow(b), (1000 * 1.2) / (R_LOOP + par), 1e-4, 'not a short past both');
+  assert.equal(runSystem(F, b).verdict, 'works');
+});
+
+test('a copy taken out takes its clamp with it, and what sat in its place goes home', () => {
+  const clamped = pull(F, block(F, addCopy(F, {}, 'resistor'), 'squeeze#2'), 'resistor#2');
+  assert.deepEqual(clamped, {});
+  near(glow(addCopy(F, clamped, 'resistor')), (1000 * 1.2) / (R_LOOP - R_RES / 2), 1e-4, 'a fresh copy starts fresh');
+  const sat = pull(F, place(F, addCopy(F, addCopy(F, {}, 'resistor'), 'wire'), 'wire#2', 'resistor#2', 'inline'), 'resistor#2');
+  assert.deepEqual(sat, { parts: { 'wire#2': { as: 'ok' } } });
+  assert.throws(() => place(F, {}, 'wire', 'resistor#2', 'beside'), /no resistor#2 on the bench/);
 });
 
 test('a part a run burns stays burnt wherever it was put', () => {
@@ -190,6 +259,9 @@ test('direction: one kidney → more waste; no alternator → less charge; no fa
 });
 
 test('which stops first: the hoses, at once, when the water pump goes; the loop, when the wire goes', () => {
+  // Without the water pump the hoses never carry a drop: quiet from the
+  // start, far longer than the warm-up they rest through as shipped. The
+  // radiator goes quiet a moment later, once its coolant has cooled to the air.
   const pump = pull(C, {}, 'water-pump');
   const q = ask(C, pump, { kind: 'first', seed: 's' });
   const t = truthOf(C, q, runN(C, pump), healthyOf.get('car'), pump);
@@ -211,6 +283,127 @@ test('keeps working: the other kidney does; the spark plugs do not, without a ba
   const bat = pull(C, {}, 'battery');
   const q = { type: 'keeps', kind: 'binary', about: { part: 'ignition' } };
   assert.equal(truthOf(C, q, runN(C, bat), healthyOf.get('car'), bat).value, 'no');
+});
+
+test('keeps working: pull the fan and the radiator still lets heat out through its fins', () => {
+  const fan = pull(C, {}, 'fan');
+  const q = { type: 'keeps', kind: 'binary', about: { part: 'radiator' } };
+  assert.equal(truthOf(C, q, runN(C, fan), healthyOf.get('car'), fan).value, 'yes');
+});
+
+test('a part counts as stopped only when it rests longer than it ever does as shipped', () => {
+  // As shipped, the radiator idles while the engine warms and the hoses
+  // rest whenever the thermostat shuts. Changes that leave the cooling
+  // alone shift when the thermostat opens and shuts, and stop nothing.
+  const H = healthyOf.get('car');
+  for (const b of [swapBad(C, {}, 'fuel-pump', 'weak'), swapBad(C, {}, 'battery', 'old'), swapBad(C, {}, 'alternator', 'worn'), addCopy(C, {}, 'water-pump'), pull(C, {}, 'fan')]) {
+    const r = runN(C, b);
+    for (const id of ['hoses', 'radiator']) {
+      assert.equal(truthOf(C, { type: 'keeps', kind: 'binary', about: { part: id } }, r, H, b).value, 'yes', `${benchKey(C, b)}: ${id}`);
+    }
+  }
+  // Two doors let the virus in faster, so the outside runs out sooner:
+  // the door goes quiet for good earlier than it does as shipped.
+  const doors = addCopy(V, {}, 'receptor');
+  const qv = { type: 'keeps', kind: 'binary', about: { part: 'receptor' } };
+  assert.equal(truthOf(V, qv, runN(V, doors), healthyOf.get('flu-cell'), doors).value, 'no');
+});
+
+test('many stops at once: every one is counted, however long the run’s event list grows', () => {
+  // Sixteen lamps of four filaments each on one switch: pull it, and
+  // sixty-four flows stop at the same moment — more than the page's
+  // list of events keeps.
+  const lamps = Array.from({ length: 16 }, (_, i) => ({
+    id: `lamp-${i}`,
+    name: `Lamp ${i}`,
+    at: [i % 8, 1 + Math.floor(i / 8)],
+    flows: [0, 1, 2, 3].map((k) => ({ id: `l${i}-${k}`, law: 'conduct', from: 'bus', to: 'gnd', g: 1 })),
+  }));
+  const s = validateSystem({
+    id: 'lamps',
+    title: 'Lamps',
+    model: 'A test.',
+    intro: 'For the tests.',
+    time: { unit: 's', step: 1, run: 5 },
+    substances: [{ id: 'q', name: 'electricity', amount: 'C', level: 'V' }],
+    nodes: [
+      { id: 'mains', substance: 'q', kind: 'fixed', level: 10 },
+      { id: 'bus', substance: 'q', kind: 'junction' },
+      { id: 'gnd', substance: 'q', kind: 'fixed', level: 0 },
+    ],
+    parts: [{ id: 'switch', name: 'Switch', at: [0, 0], flows: [{ id: 'feed', law: 'conduct', from: 'mains', to: 'bus', g: 100 }] }, ...lamps],
+    goal: { says: 'The lamps glow.', asks: 'Will the lamps glow?', checks: [{ read: { flow: 'l15-3' }, above: 0.01, fails: 'Dark.' }] },
+  });
+  const H = runSystem(s);
+  const b = pull(s, {}, 'switch');
+  const r = runSystem(s, b, { normal: normalsOf(H) });
+  assert.equal(r.events.length, 60, 'the page’s list is cut short');
+  assert.ok(!r.events.some((e) => e.part === 'lamp-15' && e.kind === 'stopped'), 'and lamp 15 fell off it');
+  assert.equal(truthOf(s, { type: 'keeps', kind: 'binary', about: { part: 'lamp-15' } }, r, H, b).value, 'no');
+  assert.deepEqual(truthOf(s, ask(s, b, { kind: 'first', seed: 's' }), r, H, b).set, lamps.map((l) => l.id));
+});
+
+test('which stops first offers a part that can only break, and is right about it', () => {
+  // A fuse holds no flow of its own; it breaks when the current through
+  // the heater it guards is too much. Doubled heater: it blows at once.
+  const s = validateSystem({
+    id: 'fuse',
+    title: 'Fuse',
+    model: 'A test.',
+    intro: 'For the tests.',
+    time: { unit: 's', step: 1, run: 5 },
+    substances: [{ id: 'q', name: 'electricity', amount: 'C', level: 'V' }],
+    nodes: [
+      { id: 'mains', substance: 'q', kind: 'fixed', level: 10 },
+      { id: 'bus', substance: 'q', kind: 'junction' },
+      { id: 'gnd', substance: 'q', kind: 'fixed', level: 0 },
+    ],
+    parts: [
+      { id: 'heater', name: 'Heater', at: [1, 0], copies: 1, flows: [{ id: 'heat', law: 'conduct', from: 'bus', to: 'gnd', g: 1 }] },
+      { id: 'feed', name: 'Wire', at: [0, 0], flows: [{ id: 'in', law: 'conduct', from: 'mains', to: 'bus', g: 100 }] },
+      { id: 'fuse', name: 'Fuse', at: [0, 1], ratings: [{ node: 'bus', below: 9.85 }] },
+      { id: 'lamp', name: 'Lamp', at: [2, 0], flows: [{ id: 'glow', law: 'conduct', from: 'bus', to: 'gnd', g: 0.1 }] },
+    ],
+    goal: { says: 'It stays on.', asks: 'Will it stay on?', checks: [{ part: 'fuse', intact: true, fails: 'The fuse blew.' }] },
+  });
+  const H = runSystem(s);
+  assert.deepEqual(H.broke, [], 'one heater: the bus sits at 10·100/101.1 = 9.89 V, inside the fuse’s limit');
+  const b = addCopy(s, {}, 'heater');
+  const r = runSystem(s, b, { normal: normalsOf(H) });
+  const q = ask(s, b, { kind: 'first', seed: 's' });
+  assert.ok(q.options.some((o) => o.id === 'fuse'), 'on the menu');
+  assert.deepEqual(truthOf(s, q, r, H, b).set, ['fuse']);
+});
+
+test('more or less "than it ships" is never asked of a store only an added part brings', () => {
+  const s = validateSystem({
+    id: 'jar',
+    title: 'Jar',
+    model: 'A test.',
+    intro: 'For the tests.',
+    time: { unit: 's', step: 1, run: 5 },
+    substances: [{ id: 'q', name: 'water', amount: 'L', level: 'L' }],
+    nodes: [
+      { id: 'tank', substance: 'q', kind: 'store', capacity: 1, start: 10 },
+      { id: 'kept', substance: 'q', kind: 'store', capacity: 1, start: 0 },
+    ],
+    parts: [
+      { id: 'tank', name: 'Tank', at: [0, 0], holds: ['tank'] },
+      { id: 'jar', name: 'Spare jar', at: [1, 0], installed: false, holds: ['kept'], flows: [{ id: 'catch', law: 'conduct', from: 'tank', to: 'kept', g: 1 }] },
+    ],
+    goal: { says: 'There is water.', asks: 'Will there be water?', checks: [{ read: { node: 'tank' }, above: 1, fails: 'Dry.' }] },
+  });
+  const b = putGood(s, {}, 'jar');
+  for (let round = 0; round < 12; round++) {
+    const q = ask(s, b, { kind: 'direction', round, seed: `r${round}` });
+    if (q.type === 'direction') assert.notEqual(q.about.node, 'kept');
+  }
+});
+
+test('"how long until" names the checks it times, when the goal also has one judged at the end', () => {
+  const q = ask(C, pull(C, {}, 'radiator'), { mode: 'measure', kind: 'when', seed: 's' });
+  assert.match(q.asks, /“The engine overheated and seized\.”/);
+  assert.ok(!kindsFor(V, {}, 'measure').includes('when'), 'a goal judged only at the end has no moment to predict');
 });
 
 test('the job question offers the part’s own job once, among others’, and model-made jobs read the wiring', () => {

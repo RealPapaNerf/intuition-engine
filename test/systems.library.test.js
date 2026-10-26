@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LIBRARY, runSystem, pull, swapBad, putGood, addCopy, isPresent } from '../systems/index.js';
+import { LIBRARY, runSystem, pull, swapBad, putGood, addCopy, block, benchKey, isPresent } from '../systems/index.js';
 
 const sys = (id) => LIBRARY.find((s) => s.id === id);
 const near = (got, want, rel, what = '') => assert.ok(Math.abs(got - want) <= rel * Math.abs(want), `${what} ${got} vs ${want}`);
@@ -17,6 +17,25 @@ test('every built-in system validates, runs healthy, and meets its own goal', ()
     assert.equal(r.verdict, 'works', `${s.id} as it ships`);
     assert.deepEqual(r.diag.unsettled, 0, `${s.id}: every oneway settled`);
     assert.ok(r.diag.clamped < 1e-9, `${s.id}: nothing went below empty`);
+    assert.deepEqual(r.broke, [], `${s.id}: nothing breaks as it ships, so a kid never starts from a broken part`);
+  }
+});
+
+test('every single change a kid can make to a built-in runs clean: every oneway settles, nothing goes below empty', () => {
+  for (const s of LIBRARY) {
+    const benches = [];
+    for (const p of s.parts) {
+      if (!p.keep) benches.push(pull(s, {}, p.id));
+      if (!p.installed) benches.push(putGood(s, {}, p.id));
+      for (const f of p.faults) benches.push(swapBad(s, {}, p.id, f.id));
+      if (p.copies) benches.push(addCopy(s, {}, p.id));
+      for (const f of p.flows) benches.push(block(s, {}, f.id));
+    }
+    for (const b of benches) {
+      const r = runSystem(s, b);
+      assert.equal(r.diag.unsettled, 0, `${s.id} ${benchKey(s, b)}`);
+      assert.ok(r.diag.clamped < 1e-9, `${s.id} ${benchKey(s, b)}: ${r.diag.clamped} made from nowhere`);
+    }
   }
 });
 

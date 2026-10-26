@@ -172,7 +172,14 @@ export function validateSystem(input) {
       if (max !== null && start > max) fail(`node ${nid}: starts above its max`);
       return { ...base, kind: 'store', capacity, start, max };
     }
-    if (n.kind === 'fixed') return { ...base, kind: 'fixed', level: num(n.level, `node ${nid}: level`) };
+    if (n.kind === 'fixed') {
+      // A store can't hold less than nothing, so a level below zero would
+      // drain it past empty — stuff made from nowhere. Count from a zero
+      // below everything in the model (for warmth: from the coldest thing).
+      const level = num(n.level, `node ${nid}: level`);
+      if (level < 0) fail(`node ${nid}: level must be 0 or more — levels count up from empty, so pick a zero below everything in the model`);
+      return { ...base, kind: 'fixed', level };
+    }
     return { ...base, kind: 'junction' };
   });
   unique(nodes, 'node', fail);
@@ -376,6 +383,15 @@ export function validateSystem(input) {
       seen.add(up);
     }
     if (p.keep && p.within && !partById.get(p.within).keep) fail(`part ${p.id} cannot be kept in while the part it sits in can come out`);
+    // A max is the room machines have. A level flow fills a store to its
+    // level whatever the max, so the two can't share a store: if it
+    // overflows, the overflow is a flow (a oneway out that opens at the brim).
+    for (const f of p.flows) {
+      if (f.law !== 'conduct' && f.law !== 'oneway') continue;
+      for (const nid of [f.from, f.to]) {
+        if (node.get(nid).max != null) fail(`node ${nid}: has a max, but the level flow "${f.id}" ignores a max — leave it off, and if it overflows, make the overflow a oneway flow out at the brim`);
+      }
+    }
   }
   out.parts = parts;
 
@@ -562,8 +578,18 @@ function setPart(system, bench, id, state) {
   const { part, copy } = instanceOf(system, id);
   const parts = { ...entries(bench) };
   const shipped = copy ? 'out' : part.installed ? 'ok' : 'out';
-  if (state.as === 'out' && copy) delete parts[id]; // a copy taken out is simply gone
-  else if (state.as === shipped && !state.broken && !state.at) delete parts[id];
+  if (state.as === 'out' && copy) {
+    // A copy taken out is simply gone, and so is everything that named
+    // it: a clamp on its flow comes off, and a part put in its place goes
+    // back to its own. A fresh copy starts fresh.
+    delete parts[id];
+    let next = tidy({ ...bench, parts, blocked: (bench?.blocked ?? []).filter((f) => flowOwner(system, f) !== id) });
+    for (const other of Object.keys(parts)) {
+      if (parts[other].at?.part === id) next = setPart(system, next, other, { ...partState(system, next, other), at: null });
+    }
+    return next;
+  }
+  if (state.as === shipped && !state.broken && !state.at) delete parts[id];
   else {
     parts[id] = { as: state.as };
     if (state.as === 'bad') parts[id].fault = state.fault;
@@ -618,9 +644,10 @@ export function slotOf(system, id) {
 export function place(system, bench, id, targetId, how) {
   if (how !== 'beside' && how !== 'inline') throw new Error("a part goes 'beside' another or 'inline' with it");
   const { part } = instanceOf(system, id);
-  const target = instanceOf(system, targetId).part;
+  const { part: target, copy } = instanceOf(system, targetId);
   if (part.keep) throw new Error(`${part.name} stays where it is`);
   if (id === targetId) throw new Error('a part cannot go beside itself');
+  if (copy && !copiesOf(system, bench, target.id).includes(targetId)) throw new Error(`there is no ${targetId} on the bench`);
   const mine = slotOf(system, id);
   const theirs = slotOf(system, targetId);
   if (!mine) throw new Error(`${part.name} does not have two ends to connect somewhere else`);

@@ -29,6 +29,7 @@
 // practising one kind at a time (interleaving).
 
 import { changes, instanceOf, instances, isPresent } from './system.js';
+import { runSystem, normalsOf } from './solve.js';
 import { makeRng, shuffled } from './seed.js';
 
 export const KINDS = Object.freeze({
@@ -133,8 +134,10 @@ function gauges(system, bench, changed) {
   }
   for (const c of system.goal.checks) if (c.read) add({ ...c.read });
   if (m && !m.read.lasts) add(m.read.node !== undefined ? { node: m.read.node } : { flow: m.read.flow });
+  // A store compared with how it ships must be there both times: one
+  // only an extra part brings has no "before" to be more or less than.
   return out
-    .filter((g) => (g.node !== undefined ? nodeHere(system, bench, g.node) : true))
+    .filter((g) => (g.node !== undefined ? nodeHere(system, bench, g.node) && nodeHere(system, {}, g.node) : true))
     .map((g) => ({ ...g, stat: statFor(g) }));
 }
 
@@ -146,9 +149,13 @@ function gaugeName(system, g) {
   return `the ${subName(system, node)} through ${owner.name}`;
 }
 
-// Parts that can stop: present, untouched by the kid, and doing something.
+// Parts that can stop: present, untouched by the kid, and doing
+// something — or able to break.
 function bystanders(system, bench, changed) {
-  return instances(system, bench).filter((id) => !changed.has(id) && isPresent(system, bench, id) && instanceOf(system, id).part.flows.length);
+  return instances(system, bench).filter((id) => {
+    const p = instanceOf(system, id).part;
+    return !changed.has(id) && isPresent(system, bench, id) && (p.flows.length || p.ratings.length);
+  });
 }
 
 // A bystander one step from what the kid changed: it shares a store or a
@@ -174,7 +181,7 @@ function neighbours(system, bench, changed) {
 export function kindsFor(system, bench, mode, { focus = null } = {}) {
   const changed = new Set(changes(system, bench).map((c) => c.part));
   if (mode === 'measure') {
-    return KINDS.measure.filter((k) => (k === 'reading' ? !!system.measure : system.goal.checks.some((c) => c.when !== 'end' || c.part !== undefined)));
+    return KINDS.measure.filter((k) => (k === 'reading' ? !!system.measure : system.goal.checks.some((c) => c.when !== 'end')));
   }
   return KINDS.feel.filter((k) => {
     if (k === 'direction') return gauges(system, bench, changed).length > 0;
@@ -262,11 +269,16 @@ export function ask(system, bench, { mode = 'feel', round = 0, seed = '', kind =
   if (type === 'when') {
     const resolution = niceStep(system.time.run / 20);
     const max = Number((Math.ceil(system.time.run / resolution - 1e-9) * resolution).toFixed(9));
+    // Only a check judged moment by moment fails at a moment: one judged
+    // at the end fails at the end, however early the car stopped. So a
+    // goal with an end check asks about its other checks, by name.
+    const timed = system.goal.checks.filter((c) => c.when !== 'end');
+    const what = timed.length === system.goal.checks.length ? 'When will it stop doing its job?' : `How long until this happens: ${timed.map((c) => `“${c.fails}”`).join(' or ')}`;
     return {
       type,
       kind: 'band',
       about: null,
-      asks: `When will it stop doing its job? (If you think it never will, go right to ${max} ${system.time.unit}.)`,
+      asks: `${what} (If you think it never will, go right to ${max} ${system.time.unit}.)`,
       unit: system.time.unit,
       max,
       resolution,
@@ -300,22 +312,54 @@ export function commit(question, call) {
   return Object.freeze({ type: question.type, call: Object.freeze({ lo, hi }) });
 }
 
-const firstStops = (result, changed) => {
-  const stops = result.events.filter((e) => (e.kind === 'stopped' || e.kind === 'broke') && !changed.has(e.part));
-  if (!stops.length) return ['nothing'];
-  const t = Math.min(...stops.map((e) => e.t));
-  return [...new Set(stops.filter((e) => e.t === t).map((e) => e.part))];
-};
+// When a part stops because of the change: the moment it goes quiet for
+// good — none of its flows carrying even 1% of the most it carries as
+// shipped, from then to the end — if that rest is longer than any it
+// takes as shipped. So a part that rests as shipped too (a radiator while
+// the engine warms, hoses a thermostat opens and shuts, a factory before
+// its first order) has not stopped because of anything the kid did; one
+// that never starts, or runs dry sooner, has. The solver measures the
+// rests step by step against the shipped run's flows (`normal`); a run
+// made without them is made again with them, once. A part that breaks
+// when it doesn't as shipped stops then.
+const restsMade = new WeakMap();
+function restsOf(system, bench, run, healthy) {
+  if (run.rests) return run.rests;
+  if (!restsMade.has(run)) restsMade.set(run, runSystem(system, bench, { normal: normalsOf(healthy) }).rests);
+  return restsMade.get(run);
+}
+function stoppedAt(system, id, result, healthy, bench) {
+  const mine = restsOf(system, bench, result, healthy)[id];
+  const shipped = restsOf(system, {}, healthy, healthy)[id];
+  let at = mine && shipped && mine.last > shipped.longest + 1e-9 ? mine.from : null;
+  const broke = result.broke.find((b) => b.part === id);
+  if (broke && !healthy.broke.some((b) => b.part === id && b.t <= broke.t)) at = at === null ? broke.t : Math.min(at, broke.t);
+  return at;
+}
+
+// The first of the menu's parts to stop: always one of its answers, so
+// a kid is never offered a menu without the right one.
+function firstStops(system, pool, result, healthy, bench) {
+  const when = pool.map((id) => [id, stoppedAt(system, id, result, healthy, bench)]).filter(([, t]) => t !== null);
+  if (!when.length) return ['nothing'];
+  const t = Math.min(...when.map(([, x]) => x));
+  return when.filter(([, x]) => x <= t + 1e-9).map(([id]) => id);
+}
 
 // What actually happened, for this question: read off the run (and, for
 // a direction, the system as it ships). `set` lists every right answer
-// when more than one is (parts that stop at the same moment).
+// when more than one is (parts that stop at the same moment). `bench` is
+// the bench the run was made on; `healthy`, the run as it ships.
 export function truthOf(system, question, result, healthy, bench = {}) {
   const changed = new Set(changes(system, bench).map((c) => c.part));
   switch (question.type) {
     case 'direction': {
       const g = question.about;
-      const pick = (r) => (g.node !== undefined ? r.stats.node[g.node]?.[g.stat] : r.stats.flow[g.flow]?.[g.stat]);
+      // read as the goal reads it: across every copy of the part
+      const pick = (r) => {
+        const st = r.stats.all ?? r.stats;
+        return g.node !== undefined ? st.node[g.node]?.[g.stat] : st.flow[g.flow]?.[g.stat];
+      };
       const h = pick(healthy);
       const c = pick(result);
       const tol = SAME_WITHIN * Math.max(Math.abs(h), Math.abs(c)) + 1e-12;
@@ -323,12 +367,12 @@ export function truthOf(system, question, result, healthy, bench = {}) {
       return { value, set: [value], before: h, after: c };
     }
     case 'first': {
-      const set = firstStops(result, changed);
+      const set = firstStops(system, bystanders(system, bench, changed), result, healthy, bench);
       return { value: set[0], set };
     }
     case 'keeps': {
       const id = question.about.part;
-      const value = result.events.some((e) => (e.kind === 'stopped' || e.kind === 'broke') && e.part === id) ? 'no' : 'yes';
+      const value = stoppedAt(system, id, result, healthy, bench) === null ? 'yes' : 'no';
       return { value, set: [value] };
     }
     case 'job':

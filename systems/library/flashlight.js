@@ -24,7 +24,10 @@ export default {
     // Two fresh AA cells: 2,500 mAh at 3.0 V. Their push fades as they
     // empty — linearly here (see notes).
     { id: 'cells', substance: 'charge', name: 'stored electricity', kind: 'store', capacity: 3000000, start: 9000000 },
-    { id: 'minus', substance: 'charge', name: 'the batteries’ minus end', kind: 'fixed', level: 0 },
+    // The spring the batteries' flat end presses on. It stays when the
+    // batteries come out, so a second pack beside the first has somewhere
+    // to send its electricity back to.
+    { id: 'minus', substance: 'charge', name: 'the minus spring', kind: 'fixed', level: 0, at: [0, 2] },
     { id: 'plus', substance: 'charge', name: 'plus wire', kind: 'junction', at: [0, 0] },
     { id: 'mid', substance: 'charge', name: 'wire after the switch', kind: 'junction', at: [2, 0] },
     { id: 'anode', substance: 'charge', name: 'wire into the light', kind: 'junction', at: [4, 0] },
@@ -39,7 +42,7 @@ export default {
       job: 'push electricity around the loop',
       at: [0, 1],
       copies: 1,
-      holds: ['cells', 'minus'],
+      holds: ['cells'],
       flows: [{ id: 'inside', law: 'conduct', from: 'cells', to: 'plus', g: 3333 }], // 0.3 Ω inside the pair
       faults: [
         { id: 'flat', name: 'flat batteries', icon: '🪫', changes: [{ node: 'cells', start: 0.55 }] },

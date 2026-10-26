@@ -79,7 +79,13 @@ to keep it so (the feed line, 2026-10-19 §6).
 
 **What a system file may do: choose laws, wiring and numbers. What it
 may not: write a law.** It is validated and frozen like a brief or a
-material, and refused, in plain words, for anything else.
+material, and refused, in plain words, for anything else — including two
+things the solver could only fake: a fixed level below zero (a store
+can't hold less than nothing, so it would drain one past empty and make
+stuff from nowhere: count from a zero below everything in the model),
+and a store with a `max` on a level flow (a level flow fills to its
+level whatever the max says; if it overflows, the overflow is a flow —
+a oneway out at the brim).
 
 **Honest has two halves here, and the engine can only promise one.**
 The engine guarantees the model is *consistent* — computed, conserved,
@@ -116,7 +122,18 @@ out; put a new LED in without fixing the wire and the new one burns too.
 real extra one would. A copy of the car's battery would hold its own
 charge that nothing draws on — a modelling artifact, not physics — so
 the car's battery has no copies; the Workbench flags a copy that takes
-over nothing when the first is pulled (§8).
+over nothing when the first is pulled (§8). The flashlight's minus
+spring belongs to the case, not to the batteries, so a second pack
+beside the first takes over when the first comes out.
+
+**A spare is a part.** A need for a part is met by any copy of it (a
+spare pump is a pump), and the goal and the instrument read every copy
+the same way: "the light glows" holds if any light does, "under its
+limit" only if every one is, and the instrument reads the most of them.
+A copy of a part that gates its own flow gates its copy of that flow; a
+copy taken out takes its clamp with it, and a part put in its place goes
+back to its own. Beside a part that has another in line with it is
+across that part's own two ends, not the whole line.
 
 Pinned by hand calculation (`test/systems.questions.test.js`): two
 resistors side by side halve R; in line they double it; two red LEDs in
@@ -142,11 +159,13 @@ answer is **read off the run** by the solver:
 | keeps | Will *that* part keep working? (a part one connection away) | feel |
 | job | What do you think *this* part does? (its job against three others') | feel |
 | reading | How much? — a band on the system's own instrument | measure |
-| when | When will it stop doing its job? — a band in time, "never" at the top | measure |
+| when | When will it stop doing its job? — a band in time, "never" at the top; a goal that also has a check judged only at the end asks about its other checks by name ("How long until this happens: 'The engine overheated and seized.'"), and a goal judged only at the end has no such question | measure |
 
 The kinds **rotate round by round** (interleaving, §5), and "ask me
 something else" skips to the next. A question about a part that stopped
-counts any of the parts that stopped together as right. "The same" is
+counts any of the parts that stopped together as right, and its menu
+holds every part that could stop or break, so the right answer is always
+on it. "The same" is
 within 2% (REVISIT with Stage 0). A setup the kid has run once cannot be
 called again unchanged (2026-10-24 §4's rule) — with one exception the
 troubleshooting needs: **a repair after a failure is always callable**,
@@ -159,7 +178,17 @@ A flow has **stopped** when it falls under 1% of what it carries in the
 system as shipped — an open loop, a light with too little push, a
 machine with nothing to work on — or when it cannot run at all (what it
 needs is gone, a level is too low). That definition is the cascade's,
-and the cascade is said to the kid as it happens.
+and the cascade is said to the kid as it happens. The questions ask
+something sharper — what stopped *because of the change* — so their
+answers compare the two runs: a part has stopped when it goes quiet for
+good (none of its flows carrying even 1% of what it carries as shipped,
+from then to the end) for longer than it ever rests as shipped,
+measured step by step. A radiator idling while the engine warms, or
+hoses resting each time the thermostat shuts, rest as shipped too; they
+have not stopped because of anything the kid did. Hoses that never
+carry a drop without the water pump, or a virus's door that runs out of
+virus sooner with a second door, have. A part that breaks when it
+doesn't as shipped stops then.
 
 ## 5. What the research says, and what was built from it
 
@@ -237,8 +266,11 @@ a system in." The engine half is §2's format. The interface is
 - See it drawn and running, and **read the answer key** — every pull,
   bad part, copy (and, if asked, every block), run — against what you
   know of the real thing. The page warns when the system fails its own
-  goal as shipped, when a change does nothing at all, and when a copy
-  takes over nothing when the first is pulled.
+  goal as shipped, when a part breaks as shipped (the kid's next run
+  would start from a broken one), when a change does nothing at all,
+  when a copy takes over nothing when the first is pulled, and when the
+  solver had to hold a store at empty — a machine and a level flow both
+  draining it faster than one step can see, which a shorter step fixes.
 - **Tick** that the answer key matches the real thing, or that the notes
   say where it doesn't — then save it to this device's shelf. Nothing
   saves without the tick (the costume portal's precedent). Pull It Apart

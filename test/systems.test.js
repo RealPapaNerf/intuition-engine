@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { validateSystem, runSystem, pull, swapBad, putGood, benchKey, changes, partState, isPresent } from '../systems/index.js';
+import { factor, solveFactored, solveLinear } from '../systems/linear.js';
 
 const close = (got, want, rel = 1e-9, what = '') =>
   assert.ok(Math.abs(got - want) <= rel * Math.max(1, Math.abs(want)), `${what} ${got} vs ${want}`);
@@ -147,6 +148,44 @@ test('a oneway passes nothing backwards and nothing below its drop', () => {
   assert.equal(runSystem(t).trace.flows.v[1], 0, '1.5 V cannot push past a 1.8 V drop');
 });
 
+test('two oneways in a line settle together: the junction between them is a divider', () => {
+  // f1 (2) → x0 (g 2) → j → x1 (g 4) → f0 (1), and a third oneway back
+  // from f0 that needs 4 to open (shut). Both forward ones on:
+  // j = (2·2 + 4·1) / (2 + 4) = 4/3, and 4/3 flows through each.
+  const s = sys({
+    time: { unit: 's', step: 1, run: 2 },
+    nodes: [fixed('f0', 1), fixed('f1', 2), junction('j')],
+    parts: [
+      part('a', [{ id: 'x0', law: 'oneway', from: 'f1', to: 'j', g: 2, drop: 0 }]),
+      part('b', [{ id: 'x1', law: 'oneway', from: 'j', to: 'f0', g: 4, drop: 0 }]),
+      part('c', [{ id: 'x2', law: 'oneway', from: 'f0', to: 'j', g: 7, drop: 4 }]),
+    ],
+  });
+  const r = runSystem(s);
+  assert.equal(r.diag.unsettled, 0);
+  close(r.trace.nodes.j[1], 4 / 3, 1e-12, 'divider');
+  close(r.trace.flows.x0[1], 4 / 3, 1e-12, 'in');
+  close(r.trace.flows.x1[1], 4 / 3, 1e-12, 'out: a junction stores nothing');
+  assert.equal(r.trace.flows.x2[1], 0);
+});
+
+test('an elimination kept and reused gives the same answer, to the last bit, as one done afresh', () => {
+  // The solver keeps each network's elimination while its links stay the
+  // same; that must change nothing but the time it takes.
+  const A = [
+    [3, -1, 0, -2],
+    [-1, 4.5, -2, 0],
+    [0, -2, 2.25, -0.25],
+    [-2, 0, -0.25, 9],
+  ];
+  const F = factor(A.map((r) => Float64Array.from(r)));
+  for (const b of [[1, 2, 3, 4], [-7.5, 0.1, 1e-9, 12], [0, 0, 0, 1]]) {
+    const fresh = solveLinear(A.map((r) => Float64Array.from(r)), Float64Array.from(b));
+    assert.deepEqual([...solveFactored(F, Float64Array.from(b))], [...fresh]);
+  }
+  assert.equal(factor([Float64Array.from([1, 1]), Float64Array.from([1, 1])]), null, 'singular: nothing holds the level');
+});
+
 test('a junction on nothing floats: it reads no level and carries nothing', () => {
   const s = sys({
     nodes: [junction('x'), junction('y')],
@@ -155,6 +194,39 @@ test('a junction on nothing floats: it reads no level and carries nothing', () =
   const r = runSystem(s);
   assert.ok(Number.isNaN(r.trace.nodes.x[1]));
   assert.equal(r.trace.flows.w[1], 0);
+});
+
+test('a junction that floats at first and is joined later is on the record from then', () => {
+  // Both valves need the tank at 3 before they open; the tank fills at
+  // 1/s. Until then the junction between them is joined to nothing; from
+  // then it is a divider: 6 · 1 / (1 + 2) = 2.
+  const ready = [{ node: 'tank', atLeast: 3 }];
+  const s = sys({
+    time: { unit: 's', step: 1, run: 10 },
+    nodes: [store('tank', 1, 0), fixed('src', 6), junction('j'), fixed('gnd', 0)],
+    parts: [
+      part('tap', [{ id: 'fill', law: 'pump', from: null, to: 'tank', rate: 1 }], { holds: ['tank'] }),
+      part('valve', [{ id: 'v', law: 'conduct', from: 'src', to: 'j', g: 1, needs: ready }]),
+      part('drain', [{ id: 'd', law: 'conduct', from: 'j', to: 'gnd', g: 2, needs: ready }]),
+    ],
+  });
+  const r = runSystem(s);
+  assert.ok(Number.isNaN(r.trace.nodes.j[0]), 'floating at the start');
+  close(r.stats.node.j.max, 2, 1e-12, 'joined later, and recorded');
+  close(r.stats.node.j.end, 2, 1e-12);
+});
+
+test('a light across a dead, floating wire is off: it does not hold the wire at its drop', () => {
+  // A loop with no battery in it: a resistor, then an LED, then ground.
+  // With the LED on, the wire would sit exactly at 1.8 V carrying
+  // nothing — a reading from nowhere. Off, nothing sets its level.
+  const s = sys({
+    nodes: [junction('x'), junction('y'), fixed('gnd', 0)],
+    parts: [part('r', [{ id: 'r', law: 'conduct', from: 'x', to: 'y', g: 1 }]), part('led', [{ id: 'v', law: 'oneway', from: 'y', to: 'gnd', g: 100, drop: 1.8 }])],
+  });
+  const r = runSystem(s);
+  assert.equal(r.stats.flow.v.max, 0);
+  assert.ok(Number.isNaN(r.trace.nodes.x[1]) && Number.isNaN(r.trace.nodes.y[1]), `${r.trace.nodes.x[1]}, ${r.trace.nodes.y[1]}`);
 });
 
 test('conservation: stores joined only to each other keep every bit of their stuff', () => {
@@ -343,6 +415,19 @@ test('a rating breaks a part only after it has been over for longer than it can 
   close(r.stats.node.block.end, 100 + 5 * 6.5, 1e-9, 'and a broken engine makes no more heat');
 });
 
+test('"for 2" means longer than 2, in whole steps: twenty steps of 0.1 are not longer than 2', () => {
+  const s = sys({
+    time: { unit: 'min', step: 0.1, run: 5 },
+    nodes: [store('block', 1, 130)],
+    parts: [part('engine', [], { holds: ['block'], ratings: [{ node: 'block', above: 125, for: 2 }] })],
+    checks: [{ part: 'engine', intact: true, fails: 'The engine seized.' }],
+  });
+  // Over from the first step. Twenty steps of 0.1 add up to
+  // 2.0000000000000004 in floating point; the twenty-first is the first
+  // that is longer than 2.
+  assert.deepEqual(runSystem(s).broke, [{ part: 'engine', t: 2.1 }]);
+});
+
 test('what broke stays broken: the next run starts with it broken, until a good one goes in', () => {
   const s = sys({
     nodes: [fixed('hi', 3), fixed('gnd', 0), junction('x')],
@@ -490,6 +575,30 @@ test('a system may choose laws and numbers, never write a law', () => {
   refuse((s) => (s.parts[0].at = undefined), /at must be \[column, row\]/);
   refuse((s) => (s.parts[0].ratings = [{ flow: 'f', below: 1 }]), /only above/);
   refuse((s) => (s.parts[0].gates = [{ flow: 'nope', by: 'a', open: 'above', at: 1 }]), /names no flow/);
+  // A store can't hold less than nothing: a level below zero would drain
+  // one past empty and make stuff from nowhere.
+  refuse((s) => (s.nodes[1].level = -10), /0 or more/);
+  // A max is the room machines have; a level flow would fill past it.
+  refuse((s) => (s.nodes[0].max = 5), /level flow "f" ignores a max/);
+});
+
+test('a level flow fills a store past any max, so a max on one is refused — the overflow is a flow', () => {
+  // What the max would have hidden: a tank on a level flow fills to the
+  // level it is joined to (10), whatever its max says (5).
+  const open = sys({
+    time: { unit: 's', step: 1, run: 60 },
+    nodes: [fixed('main', 10), store('tank', 1, 0)],
+    parts: [part('pipe', [{ id: 'in', law: 'conduct', from: 'main', to: 'tank', g: 1 }])],
+  });
+  close(runSystem(open).stats.node.tank.end, 10, 1e-9, 'a level flow fills to its level');
+  // The honest overflow: a spillway out at the brim holds it at
+  // 5 + inflow/g_spill, with inflow = g_in · (10 − level): level = (10 + 5·g_s/g_in) / (1 + g_s/g_in).
+  const spill = sys({
+    time: { unit: 's', step: 1, run: 600 },
+    nodes: [fixed('main', 10), store('tank', 1, 0), fixed('drain', 0)],
+    parts: [part('pipe', [{ id: 'in', law: 'conduct', from: 'main', to: 'tank', g: 1 }]), part('brim', [{ id: 'over', law: 'oneway', from: 'tank', to: 'drain', g: 4, drop: 5 }])],
+  });
+  close(runSystem(spill).stats.node.tank.end, (10 + 5 * 4) / (1 + 4), 1e-9, 'held near the brim');
 });
 
 test('a system is frozen once checked', () => {

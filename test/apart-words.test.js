@@ -38,7 +38,7 @@ test('the cascade says what broke and why, with the numbers and units the solver
 test('every change the bench can hold is said back', () => {
   const b = block(F, place(F, addCopy(F, {}, 'resistor'), 'resistor#2', 'resistor', 'inline'), 'return');
   const said = changes(F, b).map((c) => changeWords(F, c));
-  assert.deepEqual(said, ['You added another Resistor in line with Resistor.', '⛔ You blocked Wire back: wire out of the light → the batteries’ minus end.']);
+  assert.deepEqual(said, ['You added another Resistor in line with Resistor.', '⛔ You blocked Wire back: wire out of the light → the minus spring.']);
   assert.equal(changeWords(K, changes(K, pull(K, {}, 'left-kidney'))[0]), 'You took out Left kidney.');
 });
 
