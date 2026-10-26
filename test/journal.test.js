@@ -13,6 +13,7 @@ import {
   fingerprint,
   recommend,
   needsDebrief,
+  debriefKind,
   adultFlag,
   THRESHOLDS,
 } from '../engine/journal.js';
@@ -153,4 +154,40 @@ test('the adult flag is marked adult-only and carries evidence', () => {
   assert.equal(flag.debriefAnswer, 'I dunno');
   assert.ok(flag.evidence.throwaway.throwaway);
   assert.ok(flag.evidence.medianBandWidthRatio > 0.8);
+});
+
+// The debrief, as amended 2026-10-25: a third trigger for the moment
+// the owner described at the kitchen table — a problem the kid got
+// right after getting it wrong, where the contrast between their own
+// two attempts is the lesson. Still never every level: §7 calls that a
+// toll, and a kid who sails through first time is never stopped.
+test('a problem resolved after a failure asks for a debrief; a clean first run does not', () => {
+  const clean = makeJournal();
+  record(clean, band('a', 4, 6, 5));
+  assert.equal(debriefKind(clean), null, 'first time right: no toll');
+
+  const j = makeJournal();
+  record(j, band('a', 4, 6, 9, { buildFailed: true }));
+  assert.equal(debriefKind(j), 'failed');
+  record(j, band('a', 4, 6, 5));
+  assert.equal(debriefKind(j), 'resolved', 'it broke, then it held — ask about the contrast');
+  assert.equal(needsDebrief(j), true);
+
+  // A different problem is a different problem: the earlier failure on
+  // level 'a' is nothing to compare a success on 'b' with.
+  const other = makeJournal();
+  record(other, band('a', 4, 6, 9, { buildFailed: true }));
+  record(other, band('b', 4, 6, 5));
+  assert.equal(debriefKind(other), null);
+});
+
+test('the debrief kind names which question to ask, failed before resolved', () => {
+  const j = makeJournal();
+  record(j, band('a', 4, 6, 9, { buildFailed: true }));
+  record(j, band('a', 4, 6, 5));
+  record(j, band('a', 4, 6, 9, { buildFailed: true }));
+  assert.equal(debriefKind(j), 'failed', 'the build that just fell down is the live question');
+  const throwaway = makeJournal();
+  for (let i = 0; i < W; i++) record(throwaway, band('a', 0, 9, 5));
+  assert.equal(debriefKind(throwaway), 'throwaway');
 });

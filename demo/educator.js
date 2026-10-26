@@ -225,8 +225,15 @@ async function showKid(kid) {
         el('p', { textContent: signalWords(f.signal) }),
         f.recommendation ? el('p', { textContent: `Try: ${actionWords(f.recommendation)}` }) : null,
         f.needsDebrief
-          ? el('p', { textContent: 'A debrief is due — the last build failed, or the predictions stopped moving.' })
+          ? el('p', {
+              textContent:
+                'A debrief is due — a build failed, the predictions stopped moving, or a problem was ' +
+                'just resolved after failing.',
+            })
           : null,
+        f.debriefAnswer
+          ? el('p', { textContent: `When asked, they said: “${f.debriefAnswer}”` })
+          : el('p', { className: 'note', textContent: 'Not asked yet, or not answered.' }),
         el('h3', { textContent: 'Leaning on the coach' }),
         el('p', { textContent: relianceWords(f.coach) }),
         el('h3', { textContent: 'The evidence, unfolded' }),

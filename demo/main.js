@@ -54,6 +54,7 @@ import {
   calibration,
   makeLadder,
   consult,
+  debriefKind,
   STRAIN,
 } from '../engine/index.js';
 import { SKINS } from '../skins/index.js';
@@ -84,6 +85,7 @@ import {
 import { writeCredits } from './credits.js';
 import { makeVoice } from './speak.js';
 import { claimWords, wrongKinds, caughtBy, postmortemWords, callWords } from './advice.js';
+import { debriefQuestion, debriefChoices, attemptsFor, debriefRecord } from './debrief.js';
 import { makeCoachBox } from './coachbox.js';
 import {
   cargoDress,
@@ -177,6 +179,7 @@ let adviceSeed = null; // the setup that claim is for, or is being worked out
 let trustCall = null; // the kid's separate commitment: trusted | doubted | deferred
 let round = null; // what it said and what the kid called, captured at the gate
 let heldLog = null; // an entry waiting on the postmortem before the adult hears
+let debrief = null; // the debrief open on the round just finished
 
 // --- Storage: per-viewer conveniences, wrapped; fine without them -------
 
@@ -668,6 +671,85 @@ function showPostmortem() {
   }
 }
 
+// --- The debrief -----------------------------------------------------------
+//
+// When the exercise is done and before the kid moves on, the coach asks
+// about the kid's own attempts (decisions 2026-10-25, the debrief). It
+// opens with a canned question of ours — free, instant, and there with
+// no coach at all — and the kid's ANSWER is what the live coach then
+// responds to, so one debrief the kid engages with costs one ask and a
+// skipped one costs nothing. The answer rides on the journal entry to
+// the adult; the kid is never shown a diagnosis, and "not sure" is a
+// real answer that costs nothing.
+
+function closeDebrief() {
+  debrief = null;
+  $('debriefpanel').hidden = true;
+}
+
+function openDebrief(entry) {
+  const kind = debriefKind(journal);
+  if (!kind) {
+    closeDebrief();
+    return;
+  }
+  debrief = { kind, entry, answered: false };
+  const question = debriefQuestion(kind);
+  $('debriefq').textContent = `🧑‍🏫 ${question}`;
+  const picks = $('debriefpicks');
+  picks.replaceChildren();
+  for (const c of debriefChoices(kind)) {
+    const b = document.createElement('button');
+    b.className = 'pick';
+    b.dataset.debrief = c.label;
+    b.title = c.said;
+    b.append(
+      Object.assign(document.createElement('span'), { className: 'picon', textContent: c.icon }),
+      Object.assign(document.createElement('span'), { className: 'plabel', textContent: c.label }),
+    );
+    b.onclick = () => answerDebrief(c.said);
+    picks.append(b);
+  }
+  $('debrieftyped').hidden = spoken; // a kid who cannot read cannot type
+  $('debrieftext').value = '';
+  $('debriefpanel').hidden = false;
+  voice.say(question, { interrupt: false });
+}
+
+function answerDebrief(said) {
+  if (!debrief || debrief.answered) return;
+  const { kind, entry } = debrief;
+  debrief.answered = true;
+  entry.debrief = debriefRecord(kind, said);
+  saveJournal();
+  maybeSettle();
+  $('debriefpanel').hidden = true;
+  // The kid's own words go to the coach, which answers the only way it
+  // ever does: with another question. No coach, no problem — the
+  // debrief already happened.
+  coach?.ask(said, {
+    debrief: { kind, attempts: attemptsFor(journal.entries, entry.level) },
+  });
+}
+
+function skipDebrief() {
+  if (!debrief || debrief.answered) return;
+  debrief.answered = true;
+  debrief.entry.debrief = debriefRecord(debrief.kind, null); // a skip is a skip
+  saveJournal();
+  maybeSettle();
+  closeDebrief();
+}
+
+$('debriefskip').onclick = skipDebrief;
+$('debriefsend').onclick = () => {
+  const said = $('debrieftext').value.trim();
+  if (said) answerDebrief(said);
+};
+$('debrieftext').onkeydown = (e) => {
+  if (e.key === 'Enter') $('debriefsend').onclick();
+};
+
 function answerPostmortem(pick) {
   if (!round?.advice || round.answered) return;
   round.pick = pick;
@@ -676,7 +758,7 @@ function answerPostmortem(pick) {
     round.entry.consultant.caught = caughtBy(round.advice, pick, round.call);
   }
   saveJournal();
-  settleLog();
+  maybeSettle();
   showPostmortem();
 }
 
@@ -739,10 +821,19 @@ function consultantField() {
 }
 
 // The adult hears once the round is really over: a planted error the
-// kid has not named yet still has a postmortem to come.
+// kid has not named yet still has a postmortem to come, and a debrief
+// still has an answer to carry (decisions 2026-10-25, the debrief §6).
+const postmortemOpen = () =>
+  Boolean(round?.advice?.wrong) && round.call !== 'doubted' && !round.answered;
+const debriefOpen = () => debrief !== null && !debrief.answered;
+
 function reportEntry(entry) {
-  if (round?.advice?.wrong && round.call !== 'doubted' && !round.answered) heldLog = entry;
+  if (postmortemOpen() || debriefOpen()) heldLog = entry;
   else logEntry(entry);
+}
+
+function maybeSettle() {
+  if (!postmortemOpen() && !debriefOpen()) settleLog();
 }
 
 function toBuild(words = null) {
@@ -752,6 +843,7 @@ function toBuild(words = null) {
   debris.length = 0;
   voice.hush(); // a new round starts quiet
   spokenLine = null;
+  closeDebrief();
   settleLog(); // a postmortem the kid walked away from still reports
   round = null;
   $('postmortem').hidden = true;
@@ -992,17 +1084,19 @@ function finishMeasureRound() {
     consultant: consultantField(),
     // display metadata; the journal never reads these
     ants: design.links.length,
+    hardestPct: Math.round((run?.crossing.peakUtilization ?? 0) * 100),
     setup,
     skin: skin.id,
     at: Date.now(),
   });
   if (round) round.entry = entry;
   saveJournal();
-  reportEntry(entry);
   seen.add(setup);
   phase = 'result';
   refresh(bandVerdictWords({ hit: gRead >= lo && gRead <= hi, gRead, maxed, heldAny, lo, hi }));
   showPostmortem();
+  openDebrief(entry);
+  reportEntry(entry);
 }
 
 function finishRound() {
@@ -1023,13 +1117,13 @@ function finishRound() {
     consultant: consultantField(),
     // display metadata; the journal never reads these
     ants: design.links.length,
+    hardestPct: Math.round(c.peakUtilization * 100),
     setup,
     skin: skin.id,
     at: Date.now(),
   });
   if (round) round.entry = entry;
   saveJournal();
-  reportEntry(entry);
   seen.add(setup);
 
   const v = {
@@ -1047,6 +1141,8 @@ function finishRound() {
   phase = 'result';
   refresh(verdictWords(v));
   showPostmortem();
+  openDebrief(entry);
+  reportEntry(entry);
 }
 
 // The lazy colony, on the kid's own bridge: the links work out who the

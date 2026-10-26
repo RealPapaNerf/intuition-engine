@@ -404,3 +404,73 @@ test('the coach says whether it is there at all', () => {
   assert.equal(makeCoach({ apiKey: '', fetch: async () => ({}) }).here(), false);
   assert.equal(makeCoach({ apiKey: undefined, fetch: async () => ({}) }).here(), false);
 });
+
+// The debrief turn (decisions 2026-10-25, the debrief §3): the coach is
+// told the kid's own recent attempts, nothing adult travels with them,
+// and nothing is stocked on a turn that is about what already happened.
+test('a debrief turn carries the kid’s attempts and grants nothing', async () => {
+  let sent = null;
+  const coach = makeCoach({
+    apiKey: 'k',
+    fetch: async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          stop_reason: 'end_turn',
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                question: 'What did the extra ants change about where the load went?',
+                grant: { kind: 'links', count: 5 },
+              }),
+            },
+          ],
+          usage: { input_tokens: 1000, output_tokens: 50 },
+        }),
+      };
+    },
+  });
+  const r = await coach.ask({
+    kid: 'Bo',
+    said: 'I used more ants.',
+    state: {
+      base: 'span-gap',
+      grants: [],
+      debrief: {
+        kind: 'resolved',
+        attempts: [{ said: 'holds', happened: 'breaks', links: 10, hardestPct: 141, signal: 'bored' }],
+      },
+    },
+  });
+  assert.equal(r.on, true);
+  assert.equal(r.grant, null, 'a debrief stocks nothing, whatever the model says');
+  const posted = JSON.parse(sent.messages.at(-1).content);
+  assert.equal(posted.state.debrief.kind, 'resolved');
+  assert.deepEqual(posted.state.debrief.attempts, [
+    { said: 'holds', happened: 'breaks', links: 10, hardestPct: 141 },
+  ]);
+  assert.equal(JSON.stringify(posted).includes('bored'), false, 'the whitelist drops what it does not know');
+  assert.match(sent.system, /debrief/, 'the rules tell it what a debrief turn is');
+});
+
+test('a debrief of an unknown kind is simply not a debrief', async () => {
+  let sent = null;
+  const coach = makeCoach({
+    apiKey: 'k',
+    fetch: async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          stop_reason: 'end_turn',
+          content: [{ type: 'text', text: JSON.stringify({ question: 'What next?', grant: null }) }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }),
+      };
+    },
+  });
+  await coach.ask({ kid: 'Bo', said: 'hi', state: { base: 'span-gap', debrief: { kind: 'sneaky' } } });
+  assert.equal(JSON.parse(sent.messages.at(-1).content).state.debrief, null);
+});

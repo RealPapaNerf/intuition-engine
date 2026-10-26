@@ -122,7 +122,17 @@ Hard rules, in this order:
    with this message, and the forest offers creatures to carry, ants,
    wood, silk, rocks to stand on, and built things. You still never say
    what will hold, what to build, or where anything should go.
-5. Speak to a child: short, warm, concrete, no jargon. When
+5. When "debrief" is in the state, the exercise has just finished and
+   your question is the debrief. The kid's own recent attempts on this
+   problem are listed there — what they said, what happened, how many
+   links, how hard the hardest one worked. For kind "resolved", ask
+   what was different about the one that held, or what they make of
+   it; for "failed" or "throwaway", ask what they were trying to find
+   out with that build. Point at their attempts, never at them: no
+   "you seem", no label, no verdict on the kid, and never tell them
+   what the difference was — that is theirs to say. Grant nothing on a
+   debrief turn.
+6. Speak to a child: short, warm, concrete, no jargon. When
    state.spoken is true your words are read aloud to a kid who cannot
    read yet: at most twelve plain words. The state's questionsLeft is
    a pacing meter, never a wall — the kid is never cut off. Spend
@@ -213,6 +223,24 @@ const COACH_SCHEMA = {
 
 // What the coach is told: only what the kid can see. Anything else a
 // client posts — an adult flag most of all — stops here.
+// The debrief turn (decisions 2026-10-25, the debrief §3): the kid's
+// own recent attempts on this problem, which they watched happen. The
+// shape is pinned here so a client cannot smuggle anything else into
+// the coach's context under this name.
+const DEBRIEF_KINDS = ['resolved', 'failed', 'throwaway'];
+const word = (s, n) => (typeof s === 'string' ? s.slice(0, n) : null);
+
+function debriefState(d) {
+  if (!d || !DEBRIEF_KINDS.includes(d.kind)) return null;
+  const attempts = (Array.isArray(d.attempts) ? d.attempts : []).slice(-6).map((a) => ({
+    said: word(a?.said, 24),
+    happened: word(a?.happened, 24),
+    links: Number.isInteger(a?.links) ? a.links : null,
+    hardestPct: Number.isFinite(a?.hardestPct) ? Math.round(a.hardestPct) : null,
+  }));
+  return { kind: d.kind, attempts };
+}
+
 function kidVisibleState(state = {}, level) {
   const cal = state.calibration ?? {};
   return {
@@ -347,6 +375,7 @@ export function makeCoach({
     }
 
     const kidSaid = String(said ?? '').slice(0, 500);
+    const debrief = debriefState(state.debrief);
     // What other coaches already built that sounds like this ask —
     // grab before you build (library §2).
     const matches = (library?.search(kidSaid) ?? []).map(({ id, name, tags }) => ({ id, name, tags }));
@@ -363,6 +392,7 @@ export function makeCoach({
           content: JSON.stringify({
             state: {
               ...kidVisibleState(state, level),
+              debrief,
               // The pacing meter: what is left after this ask, floored
               // at zero, with the posture flag when the kid is past it
               // (questions §1).
@@ -418,6 +448,9 @@ export function makeCoach({
     // The grant, earned: validated against the replayed level.
     let grant = toEngineGrant(reply?.grant, library);
     if (grant && validateGrant(level, grant) !== null) grant = null;
+    // A debrief turn stocks nothing: it is about what already happened
+    // (the debrief §3). Checked here rather than trusted to the prompt.
+    if (debrief) grant = null;
 
     // A fresh build that passed the gate joins the library for the next
     // coach (saving is a bonus, never a condition of the grant). The

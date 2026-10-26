@@ -120,6 +120,18 @@ export function makeEducatorLog({ dir = null } = {}) {
   // The adult-only view of one kid: the attempts and the flag with its
   // evidence attached. The signal's persistence is tracked across looks
   // so the response ladder can escalate only while it lasts.
+  // What the kid said when last asked (decisions 2026-10-25, the
+  // debrief §6): the answer rides on the entry it belongs to, and this
+  // is where it was always meant to end up — beside the evidence, for
+  // an adult to read. A skip is recorded as a skip, not a failure.
+  function lastDebrief(j) {
+    for (let i = j.entries.length - 1; i >= 0; i--) {
+      const d = j.entries[i].debrief;
+      if (d && typeof d === 'object') return d.said ?? '(skipped)';
+    }
+    return null;
+  }
+
   function flags(kid) {
     const j = journalOf(kid);
     const signal = fingerprint(j);
@@ -145,7 +157,8 @@ export function makeEducatorLog({ dir = null } = {}) {
       coach: { ...u, reliant },
       recommendation: signal !== null ? recommend(j, { persistence: count }) : null,
       needsDebrief: needsDebrief(j),
-      flag: adultFlag(j),
+      debriefAnswer: lastDebrief(j),
+      flag: adultFlag(j, lastDebrief(j)),
       calibration: calibration(j),
       trust: trustCalibration(j),
     };

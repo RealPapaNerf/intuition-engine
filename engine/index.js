@@ -65,6 +65,7 @@ export {
   fingerprint,
   recommend,
   needsDebrief,
+  debriefKind,
   adultFlag,
   THRESHOLDS,
 } from './journal.js';

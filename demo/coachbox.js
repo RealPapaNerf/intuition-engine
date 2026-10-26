@@ -133,9 +133,12 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
     enable();
   }
 
-  async function ask(said) {
+  // `extra` is merged into the state for this one turn — the debrief
+  // sends the kid's own attempts that way (the debrief §3). The server
+  // whitelists the state again regardless of what is posted.
+  async function ask(said, extra = null) {
     const words = String(said ?? '').trim();
-    if (!words || busy || !open) return;
+    if (!words || busy || !open || !present) return;
     busy = true;
     enable();
     show('…');
@@ -145,7 +148,7 @@ export function makeCoachBox({ els, kid, getState, grant, speak = () => {}, fetc
       const res = await fetchFn('/coach/ask', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ kid: who, said: words, state: getState(), history }),
+        body: JSON.stringify({ kid: who, said: words, state: { ...getState(), ...(extra ?? {}) }, history }),
       });
       r = res.ok ? await res.json() : { on: false, why: `http-${res.status}` };
     } catch {

@@ -55,9 +55,15 @@ mode, the intro card, and `demo/educator.html`. Two readings the
 decision files left open were settled in code and said so in the
 commits: the Consultant's "unit-3 depth" is the demo's Feel/Measure
 toggle (so it starts on when measuring, and a button pins it either
-way), and "verify it" is the journal's `deferred`. **With that list
-done, the next step is not decided; it takes a new decision file, as
-always.**
+way), and "verify it" is the journal's `deferred`.
+
+**Then the kitchen table opened** (Stage 0), and what it found is the
+newest decision: `2026-10-25-the-debrief` — the kid is actually asked
+one now, including on a problem they resolved after failing it, which
+2026-10-19 §7 did not have. Stage 0 also found that a demo server
+started without `ANTHROPIC_API_KEY` grants nothing, so the kid's page
+now says plainly when no coach is there. **After that, the next step
+is not decided; it takes a new decision file, as always.**
 
 ## 3. Hard rules that bind code
 

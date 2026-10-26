@@ -198,12 +198,26 @@ export function recommend(journal, { persistence = 1 } = {}) {
   return out;
 }
 
-// §7: debriefs run after a failed build or a throwaway streak, never
-// every level.
+// §7, as amended 2026-10-25 (the debrief): debriefs run after a failed
+// build, after a throwaway-prediction streak, and when a build holds on
+// a problem an earlier attempt failed — never every level, which would
+// be a toll. Which kind it is decides which question gets asked: the
+// resolved one has a contrast between the kid's own attempts to point
+// at, and that contrast is the lesson.
+export function debriefKind(journal) {
+  const entries = journal.entries;
+  const last = entries[entries.length - 1];
+  if (!last) return null;
+  if (last.buildFailed) return 'failed';
+  if (detectThrowaway(journal).throwaway) return 'throwaway';
+  // Same problem, earlier attempt that did not stand up, this one does.
+  const earlier = entries.slice(0, -1).filter((e) => e.level === last.level);
+  if (earlier.some((e) => e.buildFailed)) return 'resolved';
+  return null;
+}
+
 export function needsDebrief(journal) {
-  const last = journal.entries[journal.entries.length - 1];
-  if (last && last.buildFailed) return true;
-  return detectThrowaway(journal).throwaway;
+  return debriefKind(journal) !== null;
 }
 
 // §7–§8: the adult-only packet — a flagged diagnosis with evidence
