@@ -168,3 +168,8 @@ costume row.
       dams wait on), and a local speech-to-text listener so the mic
       button can exist — plus the portal's still-open license
       ratification
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, teach with it, build on
+it. This project exists to spread an idea, not to own it.
