@@ -723,13 +723,7 @@ function answerDebrief(said) {
   entry.debrief = debriefRecord(kind, said);
   saveJournal();
   maybeSettle();
-  $('debriefpanel').hidden = true;
-  // The kid's own words go to the coach, which answers the only way it
-  // ever does: with another question. No coach, no problem — the
-  // debrief already happened.
-  coach?.ask(said, {
-    debrief: { kind, attempts: attemptsFor(journal.entries, entry.level) },
-  });
+  closeDebrief();
 }
 
 function skipDebrief() {
@@ -1482,6 +1476,15 @@ $('skins').append(numbersButton);
 function coachState() {
   const cal = calibration(journal);
   return {
+    // While a debrief is open, an ask the kid CHOOSES to make carries
+    // what just happened, so the coach's question is about their own
+    // attempts. The debrief itself spends nothing: it asks a canned
+    // question of ours and records the answer, with no model behind it
+    // (the debrief §4). The money is for building things, not for
+    // talking about what already happened.
+    debrief: debriefOpen()
+      ? { kind: debrief.kind, attempts: attemptsFor(journal.entries, debrief.entry.level) }
+      : undefined,
     base: LEVEL.base ?? LEVEL.id,
     grants: LEVEL.grants ?? [],
     mode,

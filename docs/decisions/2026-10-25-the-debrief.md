@@ -59,10 +59,18 @@ the debrief **opens with a canned question of ours** — free, instant,
 honest, the same every time — and the kid's **answer** is what the live
 coach then responds to, with another question, about what they said.
 
-That ordering is also the cheap one: a debrief the kid engages with
-costs exactly one ask, a skipped one costs nothing, and a keyless table
-still gets the question that matters. Nothing auto-spends on a kid who
-walks away.
+**The debrief spends nothing.** It asks a canned question of ours and
+records the answer, with no model behind it — no question off the
+meter, no cents on the ticker, and the same debrief whether or not
+there is a coach today. The owner's rule, 2026-10-25: *"don't make the
+debrief cost money. The cost is to make the kid be wise about what
+they are building, and so we don't have one kid spam the credits
+building random items."* Money is for building things, not for talking
+about what already happened.
+
+An ask the kid *chooses* to make while a debrief is open carries what
+just happened, so the coach's question is about their own attempts —
+that one is theirs to spend, like any other.
 
 ## 5. Answering without reading, and without a penalty
 
@@ -90,6 +98,4 @@ never sees a diagnosis.
 
 The debrief adds no engagement-time signal and no new adaptation
 input: the answer is evidence for an adult, not a knob. The
-duration-invariance test keeps passing. The coach still only asks. An
-ask spent on a debrief costs what any ask costs and shows on the same
-ticker — budgeting stays curriculum.
+duration-invariance test keeps passing. The coach still only asks.
